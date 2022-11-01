@@ -1,5 +1,6 @@
 const defaultEnv = {
-  PUBLIC_URL: 'http://localhost:8000',
+  // PUBLIC_URL: 'http://localhost:8000',
+  PUBLIC_URL: 'https://smart-health-links-server.cirg.washington.edu',
   EMBEDDED_LENGTH_MAX: 10_000
 };
 

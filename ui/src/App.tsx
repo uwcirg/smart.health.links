@@ -96,7 +96,7 @@ function generateLinkUrl(shl: SHLink) {
   const qrEncoded = b64urlencode(qrJson);
 
   const qrPrefixed = 'shlink:/' + qrEncoded;
-  const hostedLandingPage = 'https://demo.vaxx.link/viewer#';
+  const hostedLandingPage = 'https://smart-health-links-demo.cirg.washington.edu/viewer#';
   const link = (hostedLandingPage || '') + qrPrefixed;
   return link;
 }
