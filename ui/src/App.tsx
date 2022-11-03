@@ -4,6 +4,8 @@ import ShareIcon from '@mui/icons-material/Share';
 import { BottomNavigation, BottomNavigationAction } from '@mui/material';
 import Container from '@mui/material/Container';
 import produce from 'immer';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 import QRCode from 'qrcode';
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import useDeepCompareEffect from 'use-deep-compare-effect';
