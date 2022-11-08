@@ -13,15 +13,14 @@ COPY client ${DIRPATH}/client
 
 WORKDIR ${DIRPATH}/ui
 
-RUN npm ci
+RUN npm clean-install
 RUN npm run build
-RUN mv build public
 
 WORKDIR ${DIRPATH}/client
 
-RUN npm ci
+RUN npm clean-install
 RUN npm run build
-RUN cp -r dist ${DIRPATH}/ui/public/viewer
+RUN cp -r dist ${DIRPATH}/ui/build/viewer
 
 WORKDIR ${DIRPATH}/ui
 
