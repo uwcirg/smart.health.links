@@ -7,8 +7,12 @@ services:
       # allow override of published port
       - "127.0.0.1:${EXTERNAL_PORT:-9000}:8000"
   client:
-    build: .
+    build: ./client
     ports:
-      - "127.0.0.1:${EXTERNAL_PORT:-9001}:3000"
+      - "127.0.0.1:${EXTERNAL_PORT:-9001}:80"
+  ui:
+    build: ./ui
+    ports:
+      - "127.0.0.1:${EXTERNAL_PORT:-9002}:3000"
     env_file:
-      - app.env
+      - ui/app.env
