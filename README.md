@@ -14,7 +14,7 @@
 * Connects to server component for backend storage
 
 ## Client
-* Deployed viewer app hosted at https://smart-health-links-demo.cirg.washington.edu
+* Deployed SHL content viewer app hosted at https://smart-health-links-demo.cirg.washington.edu
 * Deployed library hosted at https://smart-health-links-demo.cirg.washington.edu/index.js
 * Generic library that supports
   * Inspecting a SHL with the `.flags({shl: "shlink:/..."})` function
