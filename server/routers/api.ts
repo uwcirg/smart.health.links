@@ -81,6 +81,15 @@ export const shlApiRouter = new oak.Router()
         ),
     };
   })
+  .put('/shl/:shlId', async (context) => {
+    const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
+    const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
+    if (!shl) {
+      throw new Error(`Can't manage SHLink ` + context.params.shlId);
+    }
+    const updated = db.DbLinks.updateConfig(shl);
+    context.response.body = updated;
+  })
   .get('/shl/:shlId/file/:fileIndex', (context) => {
     const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
     if (!ticket) {

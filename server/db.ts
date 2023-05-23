@@ -58,6 +58,15 @@ export const DbLinks = {
 
     return link;
   },
+  updateConfig(shl: types.HealthLink) {
+    db.query(`UPDATE shlink set config_passcode=:passcode, config_exp=:exp where id=:id`,
+    {
+      id: shl.id,
+      exp: shl.config.exp,
+      passcode: shl.config.passcode
+    })
+    return true;
+  },
   deactivate(shl: types.HealthLink) {
     db.query(`UPDATE shlink set active=false where id=?`, [shl.id]);
     return true;
