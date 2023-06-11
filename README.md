@@ -8,7 +8,7 @@
 
 ## UI
 
-* Demo hosted at https://smart-health-links-demo.cirg.washington.edu
+* Demo hosted at https://smart-health-links-ui.cirg.washington.edu
 * Simulates a state immunization portal or consumer health wallet UX
   * Comes with a built-in set of immunizations (synthetic data for a school-age child)
 * Connects to server component for backend storage
@@ -20,3 +20,13 @@
   * Inspecting a SHL with the `.flags({shl: "shlink:/..."})` function
   * Connecting to a SHL with the `.connect({shl: "shlink:/..."})` function
   * Pulling data from a SHL with the `.pull(connection)` function
+
+## Docker
+
+The server, UI and client containers are managed by docker compose.
+
+From the project root, run
+
+```bash
+docker-compose build && docker-compose up -d
+```
