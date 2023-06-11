@@ -4,6 +4,8 @@ import ShareIcon from '@mui/icons-material/Share';
 import { BottomNavigation, BottomNavigationAction } from '@mui/material';
 import Container from '@mui/material/Container';
 import produce from 'immer';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 import QRCode from 'qrcode';
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import useDeepCompareEffect from 'use-deep-compare-effect';
@@ -96,7 +98,7 @@ function generateLinkUrl(shl: SHLink) {
   const qrEncoded = b64urlencode(qrJson);
 
   const qrPrefixed = 'shlink:/' + qrEncoded;
-  const hostedLandingPage = 'https://demo.vaxx.link/viewer#';
+  const hostedLandingPage = 'https://smart-health-links-demo.cirg.washington.edu/#';
   const link = (hostedLandingPage || '') + qrPrefixed;
   return link;
 }
