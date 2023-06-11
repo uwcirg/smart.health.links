@@ -2,21 +2,31 @@
 
 ## Server
 
-* Demo hosted at https://api.vaxx.link
+* Demo hosted at https://smart-health-links-server.cirg.washington.edu
 * Allows external consumer apps to create a SHL and add files to it
 * Allows SHL clients to connect and pull data from any active SHL
 
 ## UI
 
-* Demo hosted at https://demo.vaxx.link
+* Demo hosted at https://smart-health-links-ui.cirg.washington.edu
 * Simulates a state immunization portal or consumer health wallet UX
   * Comes with a built-in set of immunizations (synthetic data for a school-age child)
 * Connects to server component for backend storage
 
 ## Client
-* Deployed viewer app hosted at https://demo.vaxx.link/viewer
-* Deployed library hosted at https://demo.vaxx.link/viewer/index.js
+* Deployed viewer app hosted at https://smart-health-links-demo.cirg.washington.edu
+* Deployed library hosted at https://smart-health-links-ui.cirg.washington.edu/index.js
 * Generic library that supports
   * Inspecting a SHL with the `.flags({shl: "shlink:/..."})` function
   * Connecting to a SHL with the `.connect({shl: "shlink:/..."})` function
   * Pulling data from a SHL with the `.pull(connection)` function
+
+## Docker
+
+The server, UI and client containers are managed by docker compose.
+
+From the project root, run
+
+```bash
+docker-compose build && docker-compose up -d
+```
