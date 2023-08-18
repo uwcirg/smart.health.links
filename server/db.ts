@@ -119,6 +119,25 @@ export const DbLinks = {
 
     return hashEncoded;
   },
+  async deleteFile(linkId: string, file: types.HealthLinkFile): Promise<string> {
+    const hash = await crypto.subtle.digest('SHA-256', file.content);
+    const hashEncoded = base64url.encode(hash);
+
+    db.query(
+      `delete from shlink_file where shlink = :linkId and content_type = :content and content_hash = :hashEncoded`,
+      {
+        linkId,
+        content: file.content,
+        hashEncoded,
+      }
+    );
+
+    // db.query(`delete from cas_item where hash = :hashEncoded and content = :content`,
+    // {
+    //   hashEncoded,
+    //   content: file.content,
+    // });
+  },
   async addEndpoint(linkId: string, endpoint: types.HealthLinkEndpoint): Promise<string> {
     const id = randomStringWithEntropy(32);
 

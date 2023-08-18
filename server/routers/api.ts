@@ -152,6 +152,26 @@ export const shlApiRouter = new oak.Router()
       added,
     };
   })
+  .delete('/shl/:shlId/file', async (context) => {
+    const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
+    const currentFileBody = await context.request.body({type: 'bytes'});
+
+    const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken);
+    if (!shl) {
+      throw new Error(`Can't manage SHLink ` + context.params.shlId);
+    }
+
+    const fileToRemove = {
+      contentType: context.request.headers.get('content-type')!,
+      content: await currentFileBody.value,
+    }
+
+    const deleted = db.DbLinks.deleteFile(shl.id, fileToRemove);
+    context.response.body = {
+      ...shl,
+      deleted,
+    }
+  })
   .post('/shl/:shlId/endpoint', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
     const config: types.HealthLinkEndpoint = await context.request.body({ type: 'json' }).value;
