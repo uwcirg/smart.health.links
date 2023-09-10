@@ -71,6 +71,9 @@ export const DbLinks = {
     db.query(`UPDATE shlink set active=false where id=?`, [shl.id]);
     return true;
   },
+  linkExists(linkId: string): boolean {
+    return Boolean(db.query(`SELECT * from shlink where id=?`, [linkId]));
+  },
   getManagedShl(linkId: string, managementToken: string): types.HealthLink {
     const linkRow = db
       .prepareQuery(`SELECT * from shlink where id=? and management_token=?`)
@@ -119,15 +122,14 @@ export const DbLinks = {
 
     return hashEncoded;
   },
-  async deleteFile(linkId: string, file: types.HealthLinkFile): Promise<string> {
-    const hash = await crypto.subtle.digest('SHA-256', file.content);
+  async deleteFile(linkId: string, content: Uint8Array) {
+    const hash = await crypto.subtle.digest('SHA-256', content);
     const hashEncoded = base64url.encode(hash);
 
     db.query(
-      `delete from shlink_file where shlink = :linkId and content_type = :content and content_hash = :hashEncoded`,
+      `delete from shlink_file where shlink = :linkId and content_hash = :hashEncoded`,
       {
         linkId,
-        content: file.content,
         hashEncoded,
       }
     );
@@ -137,6 +139,8 @@ export const DbLinks = {
     //   hashEncoded,
     //   content: file.content,
     // });
+
+    return true;
   },
   async addEndpoint(linkId: string, endpoint: types.HealthLinkEndpoint): Promise<string> {
     const id = randomStringWithEntropy(32);

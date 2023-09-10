@@ -161,12 +161,7 @@ export const shlApiRouter = new oak.Router()
       throw new Error(`Can't manage SHLink ` + context.params.shlId);
     }
 
-    const fileToRemove = {
-      contentType: context.request.headers.get('content-type')!,
-      content: await currentFileBody.value,
-    }
-
-    const deleted = db.DbLinks.deleteFile(shl.id, fileToRemove);
+    const deleted = db.DbLinks.deleteFile(shl.id, await currentFileBody.value);
     context.response.body = {
       ...shl,
       deleted,
@@ -190,12 +185,16 @@ export const shlApiRouter = new oak.Router()
   })
   .delete('/shl/:shlId', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-    const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-    if (!shl) {
-      throw new Error(`Can't manage SHLink ` + context.params.shlId);
+    if (db.DbLinks.linkExists(context.params.shlId)) {
+      const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
+      if (!shl) {
+        return (context.response.status = 401);
+      }
+      const deactivated = db.DbLinks.deactivate(shl);
+      context.response.body = deactivated;
+    } else {
+      return (context.response.status = 404);
     }
-    const deactivated = db.DbLinks.deactivate(shl);
-    context.response.body = deactivated;
   })
   .post('/subscribe', async (context) => {
     const shlSet: { shlId: string; managementToken: string }[] = await context.request.body({ type: 'json' }).value;
