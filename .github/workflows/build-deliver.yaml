@@ -1,0 +1,30 @@
+# docker continuous delivery
+# build docker images and push to configured repo, with tags to match branches and git tags
+---
+name: Build & Deliver
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout git commit
+        uses: actions/checkout@main
+
+      - name: Publish server images to GitHub Container Registry
+        # TODO: pin to hash
+        uses: elgohr/Publish-Docker-Github-Action@main
+        with:
+          name: ${{ github.repository }}-server
+          registry: ghcr.io
+
+          # GitHub actor
+          username: ${{ github.actor }}
+
+          # GitHub access token
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+          # create docker image tags to match git tags
+          tag_names: true
+
+          # build Dockerfile in server/ service directory
+          workdir: server
