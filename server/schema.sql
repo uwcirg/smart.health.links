@@ -6,8 +6,11 @@ CREATE TABLE IF NOT EXISTS cas_item(
 
 CREATE TABLE IF NOT EXISTS shlink(
   id VARCHAR(43) PRIMARY KEY UNIQUE,
+  patient_id VARCHAR(43) NOT NULL,
+  session_id VARCHAR(43) NOT NULL,
   passcode_failures_remaining INTEGER DEFAULT(5),
   config_passcode TEXT,
+  created DATETIME,
   config_exp DATETIME,
   active BOOLEAN NOT NULL DEFAULT(true),
   management_token VARCHAR(43) NOT NULL

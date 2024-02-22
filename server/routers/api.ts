@@ -26,8 +26,8 @@ const manifestAccessTickets: Map<string, ManifestAccessTicket> = new Map();
 
 export const shlApiRouter = new oak.Router()
   .post('/shl', async (context) => {
-    const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
-    const newLink = db.DbLinks.create(config);
+    const body: types.HealthLinkConfigLTT = await context.request.body({ type: 'json' }).value;
+    const newLink = db.DbLinks.create(body.config, body.ltt);
     context.response.body = {
       ...newLink,
       files: undefined,
@@ -83,12 +83,20 @@ export const shlApiRouter = new oak.Router()
   })
   .put('/shl/:shlId', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
+    const config = await context.request.body({ type: 'json' }).value;
     const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
     if (!shl) {
       throw new Error(`Can't manage SHLink ` + context.params.shlId);
     }
-    const updated = db.DbLinks.updateConfig(shl);
+    const updated = db.DbLinks.updateConfig(context.params.shlId, config);
     context.response.body = updated;
+  })
+  .get('/patient/:patientId', async (context) => {
+    const shl = db.DbLinks.getPatientShl(context.params.patientId)!;
+    if (!shl) {
+      throw new Error(`Can't find SHLink for patient ` + context.params.patientId);
+    }
+    context.response.body = shl;
   })
   .get('/shl/:shlId/file/:fileIndex', (context) => {
     const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);

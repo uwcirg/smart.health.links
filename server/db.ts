@@ -37,20 +37,26 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
 }
 
 export const DbLinks = {
-  create(config: types.HealthLinkConfig) {
+  create(config: types.HealthLinkConfig, lttInfo: types.LTTInfo) {
     const link = {
       config,
       id: randomStringWithEntropy(32),
+      patient_id: lttInfo.patient_id,
+      session_id: lttInfo.session_id,
       managementToken: randomStringWithEntropy(32),
+      created: new Date().toUTCString().slice(0, 19).replace('T', ' '),
       active: true,
     };
     db.query(
-      `INSERT INTO shlink (id, management_token, active, config_exp, config_passcode)
-      values (:id, :managementToken, :active, :exp, :passcode)`,
+      `INSERT INTO shlink (id, patient_id, session_id, management_token, active, created, config_exp, config_passcode)
+      values (:id, :patient_id, :session_id, :managementToken, :active, :created, :exp, :passcode)`,
       {
         id: link.id,
+        patient_id: link.patient_id,
+        session_id: link.session_id,
         managementToken: link.managementToken,
         active: link.active,
+        created: link.created,
         exp: link.config.exp,
         passcode: link.config.passcode,
       },
@@ -58,12 +64,12 @@ export const DbLinks = {
 
     return link;
   },
-  updateConfig(shl: types.HealthLink) {
+  updateConfig(linkId:string, config: types.HealthLinkConfig) {
     db.query(`UPDATE shlink set config_passcode=:passcode, config_exp=:exp where id=:id`,
     {
-      id: shl.id,
-      exp: shl.config.exp,
-      passcode: shl.config.passcode
+      id: linkId,
+      exp: config.exp,
+      passcode: config.passcode
     })
     return true;
   },
@@ -83,6 +89,28 @@ export const DbLinks = {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
+      patient_id: linkRow.patient_id as string,
+      session_id: linkRow.session_id as string,
+      created: linkRow.created as string,
+      managementToken: linkRow.management_token as string,
+      config: {
+        exp: linkRow.config_exp as number,
+        passcode: linkRow.config_passcode as string,
+      },
+    };
+  },
+  getPatientShl(patientId: string): types.HealthLink {
+    const linkRow = db
+      .prepareQuery(`SELECT * from shlink where patient_id=? order by created desc`)
+      .oneEntry([patientId]);
+    
+    return {
+      id: linkRow.id as string,
+      passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
+      active: Boolean(linkRow.active) as boolean,
+      patient_id: linkRow.patient_id as string,
+      session_id: linkRow.session_id as string,
+      created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
         exp: linkRow.config_exp as number,
@@ -96,6 +124,9 @@ export const DbLinks = {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
+      patient_id: linkRow.patient_id as string,
+      session_id: linkRow.session_id as string,
+      created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
         exp: linkRow.config_exp as number,
