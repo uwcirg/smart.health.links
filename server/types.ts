@@ -26,24 +26,13 @@ export interface HealthLinkConfig {
   exp?: number;
 }
 
-export interface LTTInfo {
-  patient_id: string;
-  session_id: string;
-}
-
-export interface HealthLinkConfigLTT {
-  config: HealthLinkConfig;
-  ltt: LTTInfo;
-}
-
 export interface HealthLink {
   config: HealthLinkConfig;
   active: boolean;
   id: string;
-  patient_id: string;
-  session_id: string;
+  user_id?: string;
   created: string;
-  managementToken: string;
+  managementToken?: string;
   passcodeFailuresRemaining: number;
 }
 
