@@ -37,23 +37,21 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
 }
 
 export const DbLinks = {
-  create(config: types.HealthLinkConfig, lttInfo: types.LTTInfo) {
+  create(config: types.HealthLinkConfig, user_id: string = "") {
     const link = {
       config,
       id: randomStringWithEntropy(32),
-      patient_id: lttInfo.patient_id,
-      session_id: lttInfo.session_id,
+      user_id: user_id,
       managementToken: randomStringWithEntropy(32),
       created: new Date().toUTCString().slice(0, 19).replace('T', ' '),
       active: true,
     };
     db.query(
-      `INSERT INTO shlink (id, patient_id, session_id, management_token, active, created, config_exp, config_passcode)
-      values (:id, :patient_id, :session_id, :managementToken, :active, :created, :exp, :passcode)`,
+      `INSERT INTO shlink (id, user_id, management_token, active, created, config_exp, config_passcode)
+      values (:id, :user_id, :managementToken, :active, :created, :exp, :passcode)`,
       {
         id: link.id,
-        patient_id: link.patient_id,
-        session_id: link.session_id,
+        user_id: link.user_id,
         managementToken: link.managementToken,
         active: link.active,
         created: link.created,
@@ -70,7 +68,7 @@ export const DbLinks = {
       id: linkId,
       exp: config.exp,
       passcode: config.passcode
-    })
+    });
     return true;
   },
   deactivate(shl: types.HealthLink) {
@@ -89,8 +87,7 @@ export const DbLinks = {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
-      patient_id: linkRow.patient_id as string,
-      session_id: linkRow.session_id as string,
+      user_id: linkRow.user_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
@@ -99,17 +96,16 @@ export const DbLinks = {
       },
     };
   },
-  getPatientShl(patientId: string): types.HealthLink {
+  getUserShl(userId: string): types.HealthLink {
     const linkRow = db
-      .prepareQuery(`SELECT * from shlink where patient_id=? order by created desc`)
-      .oneEntry([patientId]);
+      .prepareQuery(`SELECT * from shlink where user_id=? order by created desc`)
+      .oneEntry([userId]);
     
     return {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
-      patient_id: linkRow.patient_id as string,
-      session_id: linkRow.session_id as string,
+      user_id: linkRow.user_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
@@ -124,8 +120,7 @@ export const DbLinks = {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
-      patient_id: linkRow.patient_id as string,
-      session_id: linkRow.session_id as string,
+      user_id: linkRow.user_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
