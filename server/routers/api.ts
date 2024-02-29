@@ -34,15 +34,6 @@ export const shlApiRouter = new oak.Router()
       config: undefined,
     };
   })
-  .post('/user/:userId/shl', async (context) => {
-    const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
-    const newLink = db.DbLinks.create(config, context.params.userId);
-    context.response.body = {
-      ...newLink,
-      files: undefined,
-      config: undefined,
-    };
-  })
   .post('/shl/:shlId', async (context) => {
     const config: types.HealthLinkManifestRequest = await context.request.body({ type: 'json' }).value;
     const embeddedLengthMax = Math.min(env.EMBEDDED_LENGTH_MAX, config.embeddedLengthMax !== undefined ? config.embeddedLengthMax : Infinity);
@@ -108,9 +99,9 @@ export const shlApiRouter = new oak.Router()
   .get('/user/:userId', async (context) => {
     const shl = db.DbLinks.getUserShl(context.params.userId)!;
     if (!shl) {
-      throw new Error(`Can't find SHLink for user ` + context.params.userId);
+      console.log(`Can't find SHLink for user ` + context.params.userId);
+      return;
     }
-    delete shl.managementToken;
     context.response.body = shl;
   })
   .get('/shl/:shlId/file/:fileIndex', (context) => {
