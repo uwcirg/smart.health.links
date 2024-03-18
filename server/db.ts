@@ -64,15 +64,19 @@ export const DbLinks = {
       id: shl.id,
       exp: shl.config.exp,
       passcode: shl.config.passcode
-    })
+    });
     return true;
   },
   deactivate(shl: types.HealthLink) {
     db.query(`UPDATE shlink set active=false where id=?`, [shl.id]);
     return true;
   },
+  reactivate(linkId: string, managementToken: string): boolean {
+    db.query(`UPDATE shlink set active=true, passcode_failures_remaining=5 where id=? and management_token=?`, [linkId, managementToken]);
+    return true;
+  },
   linkExists(linkId: string): boolean {
-    return Boolean(db.query(`SELECT * from shlink where id=?`, [linkId]));
+    return Boolean(db.query(`SELECT * from shlink where id=? and active=1`, [linkId]));
   },
   getManagedShl(linkId: string, managementToken: string): types.HealthLink {
     const linkRow = db
