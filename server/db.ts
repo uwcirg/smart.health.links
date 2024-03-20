@@ -38,22 +38,24 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
 
 export const DbLinks = {
   create(config: types.HealthLinkConfig) {
-    let { userId, ...configSansUser } = config;
+    let { userId, sessionId, ...configSansUserAndSession } = config;
 
     const link = {
-      config: configSansUser,
+      config: configSansUserAndSession,
       id: randomStringWithEntropy(32),
       user_id: userId,
+      session_id: sessionId,
       managementToken: randomStringWithEntropy(32),
       created: new Date().getTime() / 1000,
       active: true,
     };
     db.query(
-      `INSERT INTO shlink (id, user_id, management_token, active, created, config_exp, config_passcode)
-      values (:id, :user_id, :managementToken, :active, :created, :exp, :passcode)`,
+      `INSERT INTO shlink (id, user_id, session_id, management_token, active, created, config_exp, config_passcode)
+      values (:id, :user_id, :session_id, :managementToken, :active, :created, :exp, :passcode)`,
       {
         id: link.id,
         user_id: link.user_id,
+        session_id: link.session_id,
         managementToken: link.managementToken,
         active: link.active,
         created: link.created,
@@ -90,6 +92,7 @@ export const DbLinks = {
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
       user_id: linkRow.user_id as string,
+      session_id: linkRow.session_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
@@ -108,6 +111,7 @@ export const DbLinks = {
         passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         user_id: linkRow.user_id as string,
+        session_id: linkRow.session_id as string,
         created: linkRow.created as string,
         managementToken: linkRow.management_token as string,
         config: {
@@ -127,6 +131,7 @@ export const DbLinks = {
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
       user_id: linkRow.user_id as string,
+      session_id: linkRow.session_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {

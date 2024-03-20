@@ -25,6 +25,7 @@ export interface HealthLinkConfig {
   passcode?: string;
   exp?: number;
   userId?: string;
+  sessionId?: string;
 }
 
 export interface HealthLink {
@@ -32,6 +33,7 @@ export interface HealthLink {
   active: boolean;
   id: string;
   user_id?: string;
+  session_id?: string;
   created: string;
   managementToken?: string;
   passcodeFailuresRemaining: number;

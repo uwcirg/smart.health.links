@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS cas_item(
 CREATE TABLE IF NOT EXISTS shlink(
   id VARCHAR(43) PRIMARY KEY UNIQUE,
   user_id VARCHAR(43) NOT NULL,
+  session_id VARCHAR(43) NOT NULL,
   passcode_failures_remaining INTEGER DEFAULT(5),
   config_passcode TEXT,
   config_exp DATETIME,
