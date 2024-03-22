@@ -179,6 +179,17 @@ export const DbLinks = {
 
     return true;
   },
+  async deleteAllFiles(linkId: string) {
+
+    db.query(
+      `delete from shlink_file where shlink = :linkId`,
+      {
+        linkId
+      }
+    );
+
+    return true;
+  },
   async addEndpoint(linkId: string, endpoint: types.HealthLinkEndpoint): Promise<string> {
     const id = randomStringWithEntropy(32);
 
