@@ -43,19 +43,19 @@ export const DbLinks = {
     const link = {
       config: configSansUserAndSession,
       id: randomStringWithEntropy(32),
-      user_id: userId,
-      session_id: sessionId,
+      userId: userId,
+      sessionId: sessionId,
       managementToken: randomStringWithEntropy(32),
       created: new Date().getTime() / 1000,
       active: true,
     };
     db.query(
       `INSERT INTO shlink (id, user_id, session_id, management_token, active, created, config_exp, config_passcode)
-      values (:id, :user_id, :session_id, :managementToken, :active, :created, :exp, :passcode)`,
+      values (:id, :userId, :sessionId, :managementToken, :active, :created, :exp, :passcode)`,
       {
         id: link.id,
-        user_id: link.user_id,
-        session_id: link.session_id,
+        userId: link.userId,
+        sessionId: link.sessionId,
         managementToken: link.managementToken,
         active: link.active,
         created: link.created,
@@ -91,8 +91,8 @@ export const DbLinks = {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
-      user_id: linkRow.user_id as string,
-      session_id: linkRow.session_id as string,
+      userId: linkRow.user_id as string,
+      sessionId: linkRow.session_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
@@ -104,14 +104,14 @@ export const DbLinks = {
   getUserShl(userId: string): types.HealthLink | undefined {
     try {
       const linkRow = db
-        .prepareQuery(`SELECT * from shlink where user_id=? order by created desc`)
+        .prepareQuery(`SELECT * from shlink where user_id=? and active=1 order by created desc limit 1`)
         .oneEntry([userId]);
       return {
         id: linkRow.id as string,
         passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
-        user_id: linkRow.user_id as string,
-        session_id: linkRow.session_id as string,
+        userId: linkRow.user_id as string,
+        sessionId: linkRow.session_id as string,
         created: linkRow.created as string,
         managementToken: linkRow.management_token as string,
         config: {
@@ -130,8 +130,8 @@ export const DbLinks = {
       id: linkRow.id as string,
       passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
       active: Boolean(linkRow.active) as boolean,
-      user_id: linkRow.user_id as string,
-      session_id: linkRow.session_id as string,
+      userId: linkRow.user_id as string,
+      sessionId: linkRow.session_id as string,
       created: linkRow.created as string,
       managementToken: linkRow.management_token as string,
       config: {
