@@ -168,27 +168,27 @@ export const shlApiRouter = new oak.Router()
   })
   .delete('/shl/:shlId/file', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-    const currentFileBody = await context.request.body({type: 'bytes'});
-    const currentFileValue = await currentFileBody.value;
-    console.log("Current file body is: '"+currentFileValue+"'");
     const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken);
     if (!shl) {
       throw new Error(`Can't manage SHLink ` + context.params.shlId);
     }
-
-    if (currentFileValue.length > 0) {
-      console.log("deleting single file");
-      const success = db.DbLinks.deleteFile(shl.id, currentFileValue);
-      context.response.body = {
-        ...shl,
-        success,
-      }
-    } else {
+    if (!context.request.hasBody) {
       console.log("deleting all files for shlink "+shl.id);
       const success = db.DbLinks.deleteAllFiles(shl.id);
       context.response.body = {
         ...shl,
         success,
+      }
+    } else {
+      const currentFileBody = await context.request.body().value;
+      console.log("Current file body is: '"+currentFileBody+"'");
+      if (currentFileBody.length > 0) {
+        console.log("deleting single file");
+        const success = db.DbLinks.deleteFile(shl.id, currentFileBody);
+        context.response.body = {
+          ...shl,
+          success,
+        }
       }
     }
   })
