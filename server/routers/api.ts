@@ -166,30 +166,34 @@ export const shlApiRouter = new oak.Router()
       added,
     };
   })
-  .delete('/shl/:shlId/file', async (context) => {
+  .delete('/shl/:shlId/file/all', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
+    const currentFileBody = await context.request.body({type: 'bytes'});
+
     const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken);
     if (!shl) {
       throw new Error(`Can't manage SHLink ` + context.params.shlId);
     }
-    if (!context.request.hasBody) {
-      console.log("deleting all files for shlink "+shl.id);
-      const success = db.DbLinks.deleteAllFiles(shl.id);
-      context.response.body = {
-        ...shl,
-        success,
-      }
-    } else {
-      const currentFileBody = await context.request.body().value;
-      console.log("Current file body is: '"+currentFileBody+"'");
-      if (currentFileBody.length > 0) {
-        console.log("deleting single file");
-        const success = db.DbLinks.deleteFile(shl.id, currentFileBody);
-        context.response.body = {
-          ...shl,
-          success,
-        }
-      }
+
+    const deleted = db.DbLinks.deleteAllFiles(shl.id);
+    context.response.body = {
+      ...shl,
+      deleted,
+    }
+  })
+  .delete('/shl/:shlId/file', async (context) => {
+    const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
+    const currentFileBody = await context.request.body({type: 'bytes'});
+
+    const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken);
+    if (!shl) {
+      throw new Error(`Can't manage SHLink ` + context.params.shlId);
+    }
+
+    const deleted = db.DbLinks.deleteFile(shl.id, await currentFileBody.value);
+    context.response.body = {
+      ...shl,
+      deleted,
     }
   })
   .post('/shl/:shlId/endpoint', async (context) => {
