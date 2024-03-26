@@ -67,11 +67,12 @@ export const DbLinks = {
     return link;
   },
   updateConfig(linkId:string, config: types.HealthLinkConfig) {
-    db.query(`UPDATE shlink set config_passcode=:passcode, config_exp=:exp where id=:id`,
+    db.query(`UPDATE shlink set config_passcode=:passcode, config_exp=:exp, session_id=:sessionId where id=:id`,
     {
       id: linkId,
       exp: config.exp,
-      passcode: config.passcode
+      passcode: config.passcode,
+      sessionId: config.sessionId
     });
     return true;
   },
