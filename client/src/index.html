@@ -68,6 +68,13 @@
               .map((r) => `<li><pre>${JSON.stringify(r, null, 2)}</pre></li>`)
               .join(' ')}
           </ul>
+        </div>
+        <div>
+          <h2>Raw JSON content:</h2>
+          <span>${JSON.stringify(decoded
+            .flatMap((s) => s.fhirBundle.entry)
+            .map((s) => s.resource)
+            .map(({text, ...r}) => r))}</span>
         </div>`;
       }
     </script>
