@@ -4,6 +4,8 @@ import * as db from '../db.ts';
 import * as types from '../types.ts';
 import { randomStringWithEntropy } from '../util.ts';
 
+const fileSizeMax = env.FILE_SIZE_MAX ?? 1024 * 1024 * 10;
+
 type SubscriptionTicket = string;
 type SubscriptionSet = string[];
 const subscriptionTickets: Map<SubscriptionTicket, SubscriptionSet> = new Map();
@@ -202,7 +204,10 @@ export const shlApiRouter = new oak.Router()
   })
   .post('/shl/:shlId/file', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-    const newFileBody = await context.request.body({ type: 'bytes' });
+    const newFileBody = await context.request.body({
+      type: 'bytes',
+      limit: fileSizeMax
+    });
 
     if (!db.DbLinks.linkExists(context.params.shlId)) {
       context.response.status = 404;
@@ -214,6 +219,20 @@ export const shlApiRouter = new oak.Router()
     if (!shl) {
       context.response.status = 401;
       context.response.body = { message: `Unauthorized` };
+      context.response.headers.set('content-type', 'application/json');
+      return;
+    }
+
+    let contentLength = context.request.headers.get('content-length');
+    if (contentLength === null) {
+      context.response.status = 400;
+      context.response.body = { message: `Missing content length` };
+      context.response.headers.set('content-type', 'application/json');
+      return;
+    }
+    if (Number(contentLength) > fileSizeMax) {
+      context.response.status = 413;
+      context.response.body = { message: `Size limit exceeded` };
       context.response.headers.set('content-type', 'application/json');
       return;
     }
