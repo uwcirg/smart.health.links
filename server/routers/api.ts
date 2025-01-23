@@ -57,6 +57,12 @@ export const shlApiRouter = new oak.Router()
       context.response.headers.set('content-type', 'application/json');
       return;
     }
+    if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
+      context.response.status = 403;
+      context.response.body = { message: "SHL is expired" };
+      context.response.headers.set('content-type', 'application/json');
+      return;
+    }
     if (shl.config.passcode && !("passcode" in config)) {
       context.response.status = 401;
       context.response.body = {
@@ -106,7 +112,7 @@ export const shlApiRouter = new oak.Router()
   })
   .put('/shl/:shlId', async (context) => {
     const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-    const config = await context.request.body({ type: 'json' }).value;
+    const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
     if (!db.DbLinks.linkExists(context.params.shlId)) {
       context.response.status = 404;
       context.response.body = { message: "SHL does not exist or has been deactivated." };
