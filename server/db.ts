@@ -184,7 +184,7 @@ export const DbLinks = {
     return await true;
   },
   getManifestFiles(linkId: string, embeddedLengthMax?: number) {
-    const files = db.queryEntries<{ content_type: string; content_hash: string, content?: Uint8Array }>(
+    const files = db.queryEntries<{ content_type: string; content_hash: string; content?: Uint8Array; }>(
       `select
       content_type,
       content_hash,
@@ -197,7 +197,7 @@ export const DbLinks = {
     return files.map((r) => ({
       contentType: r.content_type as types.SHLinkManifestFile['contentType'],
       hash: r.content_hash,
-      content: r.content
+      content: r.content,
     }));
   },
   getManifestEndpoints(linkId: string) {
@@ -275,7 +275,9 @@ export const DbLinks = {
     });
   },
   recordPasscodeFailure(shlId: string) {
-    const q = db.prepareQuery(`update shlink set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`);
+    const q = db.prepareQuery(
+      `update shlink set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
+    );
     q.execute([shlId]);
   },
 };
