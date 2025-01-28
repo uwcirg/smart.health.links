@@ -37,6 +37,11 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
 }
 
 export const DbLinks = {
+  handleUser(userid: string) {
+    if (this.userExists(userid)) {
+      return 
+    }
+  },
   create(config: types.HealthLinkConfig) {
     const link = {
       config,
@@ -56,14 +61,56 @@ export const DbLinks = {
       },
     );
 
-    return link;
+    const link_public = {
+      id: link.id,
+      manifestUrl: `${Deno.env.get('PUBliC_URL')}/api/shl/${link.id}`,
+      key: randomStringWithEntropy(32),
+      flag: link.config.passcode ? 'P' : '',
+      label: config.label
+    }
+
+    db.query(
+      `INSERT INTO shlink_public (shlink, manifest_url, encryption_key, flag, label)
+      values (:shlink, :manifestUrl, :encryptionKey, :flag, :label)`,
+      {
+        shlink: link_public.id,
+        manifestUrl: link_public.manifestUrl,
+        encryptionKey: link_public.key,
+        flag: link_public.flag,
+        label: link_public.label
+      },
+    );
+
+    return link_public;
   },
   updateConfig(shl: types.HealthLink) {
-    db.query(`UPDATE shlink set config_passcode=:passcode, config_exp=:exp where id=:id`,
-    {
-      id: shl.id,
-      exp: shl.config.exp,
-      passcode: shl.config.passcode
+    let pub = db.query(`SELECT * from shlink_public where shlink=?`).oneEntry([shl.id]);
+    if (!pub) {
+      return false;
+    }
+    let newFlag = pub.flag;
+    if (shl.config.passcode && !pub.flag.includes('P')) {
+      newFlag = pub.flag + 'P';
+    } else if (shl.config.passcode === "") {
+      newFlag = pub.flag.replace('P', '');
+    }
+    db.transaction(() => {
+      db.query(
+        `UPDATE shlink_public set flag=:flag, label=:label where shlink=:id`,
+        {
+          id: shl.id,
+          flag: shl.config.passcode ? 'P' : '',
+          label: shl.config.label
+        }
+      );
+      db.query(
+        `UPDATE shlink set config_passcode=:passcode, config_exp=:exp where id=:id`,
+        {
+          id: shl.id,
+          exp: shl.config.exp,
+          passcode: shl.config.passcode
+        }
+      );
     });
     return true;
   },
@@ -77,6 +124,35 @@ export const DbLinks = {
   },
   linkExists(linkId: string): boolean {
     return Boolean(db.query(`SELECT * from shlink where id=? and active=1`, [linkId]));
+  },
+  userExists(userId: string): boolean {
+    return Boolean(db.query(`SELECT * from user where id=?`, [userId]));
+  },
+  getUserShls(userId: string): types.HealthLink | undefined {
+    try {
+      const linkRow = db
+        .prepareQuery(`SELECT * from shlink where user_id=? and active=1 order by created desc limit 1`)
+        .allEntries([userId]);
+      // TODO: fix
+      const linkPub = db
+        .prepareQuery(`SELECT * from shlink_public where shlink=?`)
+        .allEntries([linkRow.id]);
+      return {
+        id: linkRow.id as string,
+        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
+        active: Boolean(linkRow.active) as boolean,
+        sessionId: linkRow.session_id as string,
+        created: linkRow.created as string,
+        managementToken: linkRow.management_token as string,
+        config: {
+          exp: linkRow.config_exp as number,
+          passcode: linkRow.config_passcode as string,
+        },
+      };
+    } catch (e) {
+      console.warn(e);
+      return undefined;
+    }
   },
   getManagedShl(linkId: string, managementToken: string): types.HealthLink {
     const linkRow = db
@@ -143,6 +219,17 @@ export const DbLinks = {
     //   hashEncoded,
     //   content: file.content,
     // });
+
+    return true;
+  },
+  async deleteAllFiles(linkId: string) {
+
+    db.query(
+      `delete from shlink_file where shlink = :linkId`,
+      {
+        linkId
+      }
+    );
 
     return true;
   },

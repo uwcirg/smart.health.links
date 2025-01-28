@@ -24,6 +24,7 @@ export interface HealthLinkEndpoint {
 export interface HealthLinkConfig {
   passcode?: string;
   exp?: number;
+  label?: string;
 }
 
 export interface HealthLink {

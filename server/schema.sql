@@ -4,6 +4,16 @@ CREATE TABLE IF NOT EXISTS cas_item(
   ref_count INTEGER DEFAULT(0)
 );
 
+CREATE TABLE IF NOT EXISTS user(
+  id INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
+  auth_id VARCHAR(43) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_shlink(
+  user VARCHAR(43) REFERENCES user(id),
+  shlink VARCHAR(43) REFERENCES shlink(id)
+);
+
 CREATE TABLE IF NOT EXISTS shlink(
   id VARCHAR(43) PRIMARY KEY UNIQUE,
   passcode_failures_remaining INTEGER DEFAULT(5),
@@ -13,8 +23,18 @@ CREATE TABLE IF NOT EXISTS shlink(
   management_token VARCHAR(43) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS shlink_public(
+  shlink VARCHAR(43) REFERENCES shlink(id),
+  manifest_url TEXT NOT NULL,
+  encryption_key VARCHAR(43),
+  flag VARCHAR(3),
+  label VARCHAR(80),
+  version INTEGER DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS shlink_file(
   shlink VARCHAR(43) REFERENCES shlink(id),
+  added_time DATETIME NOT NULL DEFAULT(DATETIME('now')),
   content_type TEXT NOT NULL DEFAULT "application/json",
   content_hash TEXT REFERENCES cas_item(hash)
 );
@@ -22,6 +42,7 @@ CREATE TABLE IF NOT EXISTS shlink_file(
 CREATE TABLE IF NOT EXISTS shlink_endpoint(
   id VARCHAR(43) PRIMARY KEY UNIQUE,
   shlink VARCHAR(43) REFERENCES shlink(id),
+  added_time DATETIME NOT NULL DEFAULT(DATETIME('now')),
   endpoint_url TEXT NOT NULL,
   config_key VARCHAR(43) NOT NULL,
   config_client_id TEXT NOT NULL,
@@ -31,7 +52,6 @@ CREATE TABLE IF NOT EXISTS shlink_endpoint(
   refresh_time TEXT NOT NULL DEFAULT(DATETIME('now', '+5 minutes')),
   access_token_response TEXT NOT NULL
 );
-
 
 CREATE TABLE IF NOT EXISTS shlink_access(
   shlink VARCHAR(43) REFERENCES shlink(id),
@@ -53,9 +73,9 @@ CREATE TRIGGER IF NOT EXISTS insert_link_to_cas
         update cas_item set ref_count=ref_count+1 where hash=NEW.content_hash;
     END;
 
-create trigger if not exists disable_shlink_on_passcode_failure
-  after update on shlink
-  for each row
-    begin
-        update shlink set active=false where id=new.id and passcode_failures_remaining <= 0;
-    end;
+CREATE TRIGGER IF NOT EXISTS disable_shlink_on_passcode_failure
+  AFTER UPDATE ON shlink
+  FOR EACH ROW
+    BEGIN
+        UPDATE shlink SET active=false WHERE id=new.id AND passcode_failures_remaining <= 0;
+    END;

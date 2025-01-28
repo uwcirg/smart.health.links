@@ -2,7 +2,8 @@ const defaultEnv = {
   // PUBLIC_URL: 'http://localhost:8000',
   PUBLIC_URL: 'https://smart-health-links-server.cirg.washington.edu',
   FILE_SIZE_MAX: 1024 * 1024 * 100, // 100 MB
-  EMBEDDED_LENGTH_MAX: 10_000
+  EMBEDDED_LENGTH_MAX: 10_000, // 10 KB
+  JWKS_URL: "",
 };
 
 async function envOrDefault(variable: string, defaultValue: string | number) {
