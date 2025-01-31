@@ -128,214 +128,6 @@ router.get('/shl/:shlId/file/:fileIndex', (context) => {
   context.response.headers.set('content-type', 'application/jose');
   context.response.body = file.content;
 });
-/** [Deprecated] Demo iis endpoint for HIMSS 2024 */
-router.post('/iis', async(context) => {
-  const content = await context.request.body({ type: 'json' }).value;
-  const response = await fetch('http://35.160.125.146:8039/fhir/Patient/', {
-    method: 'POST',
-    headers: content.headers,
-    body: JSON.stringify(content)
-  });
-  if (response.ok) {
-    const body = await response.json();
-    context.response.body = body;
-  } else {
-    throw new Error('Unable to fetch IIS immunization data');
-  };
-});
-
-/**
- * Middleware for JWT validation in front of below routes if necessary
- */
-if (Deno.env.get('JWKS_URL')) {
-  router.use(authMiddleware);
-}
-
-/**
- * Endpoints behind JWT validation middleware when enabled
-*/
-/** Create SHL */
-router.post('/shl', async (context) => {
-  const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
-  const newLink = db.DbLinks.create(config);
-  console.log("Created link " + newLink.id);
-  context.response.body = {
-    ...newLink,
-    files: undefined,
-    config: undefined,
-  };
-});
-/** Update SHL */
-router.put('/shl/:shlId', async (context) => {
-  const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-  const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
-  if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-  if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  shl.config.exp = config.exp ?? shl.config.exp;
-  shl.config.passcode = config.passcode ?? shl.config.passcode;
-  const updated = db.DbLinks.updateConfig(shl);
-  const updatedShl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-  context.response.body = updatedShl;
-  context.response.headers.set('content-type', 'application/json');
-});
-/** Deactivate SHL */
-router.delete('/shl/:shlId', async (context) => {
-  const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-  if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  try {
-    const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-    if (!shl) {
-      context.response.status = 401;
-      context.response.body = { message: `Unauthorized` };
-      context.response.headers.set('content-type', 'application/json');
-      return;
-    }
-    const deactivated = db.DbLinks.deactivate(shl);
-    context.response.body = deactivated;
-  } catch {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist" };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-});
-/** Check if SHL is active */
-router.get('/shl/:shlId/active', (context) => {
-  const shl = db.DbLinks.getShlInternal(context.params.shlId);
-  if (!shl) {
-    context.response.status = 404;
-    context.response.body = { message: `Deleted` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  const isActive = (shl && shl.active);
-  console.log(context.params.shlId + " active: " + isActive);
-  context.response.body = isActive;
-  context.response.headers.set('content-type', 'application/json');
-  return;
-});
-/** Reactivate SHL */
-router.put('/shl/:shlId/reactivate', async (context) => {
-  const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-  const success = db.DbLinks.reactivate(context.params.shlId, managementToken)!;
-  console.log("Reactivated " + context.params.shlId + ": " + success);
-  context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = success);
-});
-/** Add file to SHL */
-router.post('/shl/:shlId/file', async (context) => {
-  const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-  const newFileBody = await context.request.body({
-    type: 'bytes',
-    limit: fileSizeMax
-  });
-
-  if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-  if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-
-  let contentLength = context.request.headers.get('content-length');
-  if (contentLength === null) {
-    context.response.status = 400;
-    context.response.body = { message: `Missing content length` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  if (Number(contentLength) > fileSizeMax) {
-    context.response.status = 413;
-    context.response.body = { message: `Size limit exceeded` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-
-  const newFile = {
-    contentType: context.request.headers.get('content-type')!,
-    content: await newFileBody.value,
-  };
-
-  const added = db.DbLinks.addFile(shl.id, newFile);
-  context.response.body = {
-    ...shl,
-    added,
-  };
-});
-/** Delete file from SHL */
-router.delete('/shl/:shlId/file', async (context) => {
-  const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-  const currentFileBody = await context.request.body({type: 'bytes'});
-  if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-  if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  
-  const deleted = db.DbLinks.deleteFile(shl.id, await currentFileBody.value);
-  context.response.body = {
-    ...shl,
-    deleted,
-  }
-  context.response.headers.set('content-type', 'application/json');
-});
-/** Add endpoint to SHL */
-router.post('/shl/:shlId/endpoint', async (context) => {
-  const managementToken = await context.request.headers.get('authorization')?.split(/bearer /i)[1]!;
-  const config: types.HealthLinkEndpoint = await context.request.body({ type: 'json' }).value;
-
-  if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-  const shl = db.DbLinks.getManagedShl(context.params.shlId, managementToken)!;
-  if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
-    return;
-  }
-
-  const added = await db.DbLinks.addEndpoint(shl.id, config);
-  console.log("Added", added)
-  context.response.body = {
-    ...shl,
-    added,
-  };
-});
 /** Request SHL endpoint from manifest */
 router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
@@ -368,6 +160,236 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
     })
     .encrypt(jose.base64url.decode(endpoint.config.key));
   context.response.body = encrypted;
+});
+/** Check if SHL is active */
+router.get('/shl/:shlId/active', (context) => {
+  const shl = db.DbLinks.getShlInternal(context.params.shlId);
+  if (!shl) {
+    context.response.status = 404;
+    context.response.body = { message: `Deleted` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  const isActive = (shl && shl.active);
+  console.log(context.params.shlId + " active: " + isActive);
+  context.response.body = isActive;
+  context.response.headers.set('content-type', 'application/json');
+  return;
+});
+/** [Deprecated] Demo iis endpoint for HIMSS 2024 */
+router.post('/iis', async(context) => {
+  const content = await context.request.body({ type: 'json' }).value;
+  const response = await fetch('http://35.160.125.146:8039/fhir/Patient/', {
+    method: 'POST',
+    headers: content.headers,
+    body: JSON.stringify(content)
+  });
+  if (response.ok) {
+    const body = await response.json();
+    context.response.body = body;
+  } else {
+    throw new Error('Unable to fetch IIS immunization data');
+  };
+});
+
+/**
+ * Middleware for JWT validation in front of below routes if necessary
+ */
+router.use(authMiddleware);
+
+/**
+ * Endpoints behind JWT validation middleware when enabled
+*/
+/** Get SHLs for user */
+router.get('/user', async (context: oak.Context) => {
+  const shls = db.DbLinks.getUserShls(context.state.auth.sub)!;
+  if (!shls) {
+    console.log(`No SHLinks for user ` + context.state.auth.sub);
+    return (context.response.body = []);
+  }
+  return (context.response.body = shls);
+});
+/** Create SHL */
+router.post('/shl', async (context) => {
+  const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
+  const newLink = db.DbLinks.create(config);
+  console.log("Created link " + newLink.id);
+  context.response.body = {
+    ...newLink,
+    files: undefined,
+    config: undefined,
+  };
+});
+/** Update SHL */
+router.put('/shl/:shlId', async (context) => {
+  const userId = context.state.auth.sub;
+  const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    context.response.status = 404;
+    context.response.body = { message: "SHL does not exist or has been deactivated." };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  if (!shl) {
+    context.response.status = 401;
+    context.response.body = { message: `Unauthorized` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  shl.config.exp = config.exp ?? shl.config.exp;
+  shl.config.passcode = config.passcode ?? shl.config.passcode;
+  const updated = db.DbLinks.updateConfig(shl);
+  const updatedShl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  context.response.body = updatedShl;
+  context.response.headers.set('content-type', 'application/json');
+});
+/** Deactivate SHL */
+router.delete('/shl/:shlId', async (context) => {
+  const userId = context.state.auth.sub;
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    context.response.status = 404;
+    context.response.body = { message: "SHL does not exist or has been deactivated." };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  try {
+    const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+    if (!shl) {
+      context.response.status = 401;
+      context.response.body = { message: `Unauthorized` };
+      context.response.headers.set('content-type', 'application/json');
+      return;
+    }
+    const deactivated = db.DbLinks.deactivate(shl);
+    if (!deactivated) {
+      context.response.status = 500;
+      context.response.body = { message: "Failed to delete SHL" };
+      context.response.headers.set('content-type', 'application/json');
+      return;
+    }
+    context.response.body = deactivated;
+  } catch {
+    context.response.status = 404;
+    context.response.body = { message: "SHL does not exist" };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+});
+/** Reactivate SHL */
+router.put('/shl/:shlId/reactivate', async (context) => {
+  const userId = context.state.auth.sub;
+  const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  if (!shl) {
+    context.response.status = 401;
+    context.response.body = { message: `Unauthorized` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  const success = db.DbLinks.reactivate(shl)!;
+  console.log("Reactivated " + context.params.shlId + ": " + success);
+  context.response.headers.set('content-type', 'application/json');
+  return (context.response.body = success);
+});
+/** Add file to SHL */
+router.post('/shl/:shlId/file', async (context) => {
+  const userId = context.state.auth.sub;
+  const newFileBody = await context.request.body({
+    type: 'bytes',
+    limit: fileSizeMax
+  });
+
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    context.response.status = 404;
+    context.response.body = { message: "SHL does not exist or has been deactivated." };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  if (!shl) {
+    context.response.status = 401;
+    context.response.body = { message: `Unauthorized` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+
+  let contentLength = context.request.headers.get('content-length');
+  if (contentLength === null) {
+    context.response.status = 400;
+    context.response.body = { message: `Missing content length` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  if (Number(contentLength) > fileSizeMax) {
+    context.response.status = 413;
+    context.response.body = { message: `Size limit exceeded` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+
+  const newFile = {
+    contentType: context.request.headers.get('content-type')!,
+    content: await newFileBody.value,
+  };
+
+  const added = db.DbLinks.addFile(shl.id, newFile);
+  context.response.body = {
+    added
+  };
+});
+/** Delete file from SHL */
+router.delete('/shl/:shlId/file', async (context) => {
+  const userId = context.state.auth.sub;
+  const currentFileBody = await context.request.body({type: 'bytes'});
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    context.response.status = 404;
+    context.response.body = { message: "SHL does not exist or has been deactivated." };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  if (!shl) {
+    context.response.status = 401;
+    context.response.body = { message: `Unauthorized` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  
+  const deleted = db.DbLinks.deleteFile(shl.id, await currentFileBody.value);
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    context.response.status = 500;
+    context.response.body = { message: "Failed to delete file" };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  context.response.headers.set('content-type', 'application/json');
+  return (context.response.body = { deleted });
+});
+/** Add endpoint to SHL */
+router.post('/shl/:shlId/endpoint', async (context) => {
+  const userId = context.state.auth.sub;
+  const config: types.HealthLinkEndpoint = await context.request.body({ type: 'json' }).value;
+
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    context.response.status = 404;
+    context.response.body = { message: "SHL does not exist or has been deactivated." };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+  const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  if (!shl) {
+    context.response.status = 401;
+    context.response.body = { message: `Unauthorized` };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
+
+  const added = await db.DbLinks.addEndpoint(shl.id, config);
+  console.log("Added", added)
+  context.response.body = {
+    ...shl,
+    added,
+  };
 });
 /** Subscribe to SHLs related to a management token */
 router.post('/subscribe', async (context) => {
@@ -425,6 +447,22 @@ router.post('/register', (context) => {
 
 /** JWT validation middleware */
 async function authMiddleware(ctx, next) {
+
+  // TODO: temp - remove in favor of jwt
+  // Adapter to handle user id in body
+  try {
+    const content = await ctx.request.body({ type: 'json' }).value;
+    console.log(content);
+    if (content.userId) {
+      console.log("Using user id from body: " + content.userId);
+      ctx.state.auth = { sub: content.userId };
+      return await next();
+    }
+  } catch (e) {
+    console.log("No body, skipping userId check");
+  }
+  // temp
+
   const token = ctx.request.headers.get('Authorization');
   if (!token) {
     ctx.response.status = 400;
@@ -438,6 +476,16 @@ async function authMiddleware(ctx, next) {
     ctx.response.body = { message: 'token missing' };
     return;
   }
+
+  // TODO: temp - remove in favor of jwt
+  // Adapter to handle management token auth header
+  if (db.DbLinks.managementTokenExists(tokenValue)) {
+    console.log("Using management token: " + tokenValue);
+    ctx.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
+    console.log("User: " + ctx.state.auth.sub);
+    return await next();
+  }
+  // temp
 
   const jwksClient = await fetch(Deno.env.get('JWKS_URL'));
   const jwks = await jwksClient.json();
@@ -454,9 +502,9 @@ async function authMiddleware(ctx, next) {
       algorithms: ['RS256'],
       audience: ['account'],
     });
-    ctx.state.user = decodedToken.payload;
+    ctx.state.auth = decodedToken.payload;
     
-    await next();
+    return await next();
   
   } catch (error) {
     if (error instanceof jose.jwt.JWTExpired) {
