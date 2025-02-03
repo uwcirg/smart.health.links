@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS shlink_access(
 CREATE TABLE IF NOT EXISTS shlink_public(
   shlink VARCHAR(43) REFERENCES shlink_access(id),
   manifest_url TEXT NOT NULL,
-  encryption_key VARCHAR(43),
+  encryption_key VARCHAR(43) NOT NULL,
   flag VARCHAR(3),
   label VARCHAR(80),
   version INTEGER DEFAULT 1
