@@ -225,7 +225,7 @@ router.post('/shl', async (context) => {
   console.log("Config posted:" + JSON.stringify(config));
   const newLink = db.DbLinks.create(config);
   console.log("Created link " + newLink.id);
-  const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareShlForReturn(newLink)));
+  const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
   const shlinkBare = `shlink:/${encodedPayload}`;
   context.response.headers.set('content-type', 'application/json');
   return (context.response.body = shlinkBare);
@@ -531,6 +531,26 @@ async function authMiddleware(ctx, next) {
     }
     return;
   }
+}
+
+function prepareMinimalShlForReturn(shl: types.HealthLinkFull) {
+  let flat = {
+    ...shl,
+    ...shl.config,
+  };
+  const keys = [
+    "id",
+    "url",
+    "key",
+    "exp",
+    "flag",
+    "label",
+    "v",
+  ];
+  const subset = Object.fromEntries(
+    Object.entries(flat).filter(([key]) => keys.includes(key))
+  );
+  return subset;
 }
 
 function prepareShlForReturn(shl: types.HealthLinkFull) {
