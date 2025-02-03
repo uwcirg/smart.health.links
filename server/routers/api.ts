@@ -67,7 +67,7 @@ router.post('/shl/:shlId', async (context) => {
   if (shl.config.passcode && !("passcode" in config)) {
     context.response.status = 401;
     context.response.body = {
-      message: "Password required",
+      message: "Passcode required",
       remainingAttempts: shl.passcodeFailuresRemaining
     }
     context.response.headers.set('content-type', 'application/json');

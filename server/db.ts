@@ -74,7 +74,7 @@ export const DbLinks = {
       id: link.id,
       manifestUrl: `${env.PUBLIC_URL}/api/shl/${link.id}`,
       key: randomStringWithEntropy(32),
-      flag: link.config.passcode.length > 0 ? 'P' : '',
+      flag: 'P',
       label: config.label,
       version: 1
     }
@@ -124,17 +124,15 @@ export const DbLinks = {
       return false;
     }
     let newFlag = pub.flag;
-    if (shl.config.passcode && !pub.flag.includes('P')) {
+    if (!pub.flag.includes('P')) {
       newFlag = pub.flag + 'P';
-    } else if (shl.config.passcode.length > 0) {
-      newFlag = pub.flag.replace('P', '');
     }
     db.transaction(() => {
       db.query(
         `UPDATE shlink_public set flag=:flag, label=:label where shlink=:id`,
         {
           id: shl.id,
-          flag: shl.config.passcode.length > 0 ? 'P' : '',
+          flag: newFlag,
           label: shl.label
         }
       );
