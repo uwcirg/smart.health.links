@@ -225,7 +225,10 @@ router.post('/shl', async (context) => {
   console.log("Config posted:" + JSON.stringify(config));
   const newLink = db.DbLinks.create(config);
   console.log("Created link " + newLink.id);
-  return (context.response.body = prepareShlForReturn(newLink));
+  const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareShlForReturn(newLink)));
+  const shlinkBare = `shlink:/${encodedPayload}`;
+  context.response.headers.set('content-type', 'application/json');
+  return (context.response.body = shlinkBare);
 });
 /** Update SHL */
 router.put('/shl/:shlId', async (context) => {
