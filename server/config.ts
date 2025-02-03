@@ -1,8 +1,18 @@
-const defaultEnv = {
-  // PUBLIC_URL: 'http://localhost:8000',
-  PUBLIC_URL: 'https://smart-health-links-server.cirg.washington.edu',
+interface Config {
+  PUBLIC_URL: string;
+  EMBEDDED_LENGTH_MAX: number;
+  FILE_SIZE_MAX: number;
+  APP_VERSION_STRING?: string;
+  PORT?: number;
+  JWKS_URL?: string;
+};
+
+const defaultEnv: Config = {
+  PUBLIC_URL: 'http://localhost:8000',
   FILE_SIZE_MAX: 1024 * 1024 * 100, // 100 MB
   EMBEDDED_LENGTH_MAX: 10_000, // 10 KB
+  APP_VERSION_STRING: "",
+  PORT: 8000,
   JWKS_URL: "",
 };
 
