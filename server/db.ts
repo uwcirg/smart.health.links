@@ -38,11 +38,11 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
 }
 
 export const DbLinks = {
-  createUser(userid: string) {
+  createUserIfNotExists(userid: string) {
     return db.query(`INSERT or ignore INTO user (id) values (?)`, [userid]);
   },
   create(config: types.HealthLinkConfig) {
-    this.createUser(config.userId);
+    this.createUserIfNotExists(config.userId);
     const link = {
       config,
       id: randomStringWithEntropy(32),
@@ -74,7 +74,7 @@ export const DbLinks = {
       id: link.id,
       manifestUrl: `${env.PUBLIC_URL}/api/shl/${link.id}`,
       key: randomStringWithEntropy(32),
-      flag: link.config.passcode ? 'P' : '',
+      flag: link.config.passcode.length > 0 ? 'P' : '',
       label: config.label,
       version: 1
     }
@@ -95,7 +95,7 @@ export const DbLinks = {
     return {
       id: link_public.id as string,
       url: link_public.manifestUrl as string,
-      key: link_public.key as string,
+      key: link_public.key as string & { length: 43 },
       flag: link_public.flag as string,
       label: link_public.label as string,
       v: link_public.version as number,
@@ -118,7 +118,7 @@ export const DbLinks = {
       label: shl.label
     };
   },
-  updateConfig(shl: types.HealthLink) {
+  updateConfig(shl: types.HealthLinkFull) {
     let pub = db.prepareQuery(`SELECT * from shlink_public where shlink=?`).oneEntry([shl.id]);
     if (!pub) {
       return false;
@@ -126,7 +126,7 @@ export const DbLinks = {
     let newFlag = pub.flag;
     if (shl.config.passcode && !pub.flag.includes('P')) {
       newFlag = pub.flag + 'P';
-    } else if (shl.config.passcode === "") {
+    } else if (shl.config.passcode.length > 0) {
       newFlag = pub.flag.replace('P', '');
     }
     db.transaction(() => {
@@ -134,8 +134,8 @@ export const DbLinks = {
         `UPDATE shlink_public set flag=:flag, label=:label where shlink=:id`,
         {
           id: shl.id,
-          flag: shl.config.passcode ? 'P' : '',
-          label: shl.config.label
+          flag: shl.config.passcode.length > 0 ? 'P' : '',
+          label: shl.label
         }
       );
       db.query(
@@ -189,26 +189,11 @@ export const DbLinks = {
       },
     };
   },
-  getManagedShl(linkId: string, managementToken: string): types.HealthLink {
-    const linkRow = db
-      .prepareQuery(`SELECT * from shlink_access where id=? and management_token=?`)
-      .oneEntry([linkId, managementToken]);
-
-    return {
-      id: linkRow.id as string,
-      passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
-      active: Boolean(linkRow.active) as boolean,
-      managementToken: linkRow.management_token as string,
-      config: {
-        exp: linkRow.config_exp as number,
-        passcode: linkRow.config_passcode as string,
-      },
-    };
-  },
-  getUserShl(linkId: string, userId: string): types.HealthLink {
+  getUserShlInternal(linkId: string, userId: string): types.HealthLink {
     try {
       const userRow = db
-        .prepareQuery(`SELECT * from user_shlink where shlink=? and user=?`)
+        .prepareQuery(`
+          SELECT * from user_shlink where shlink=? and user=?`)
         .oneEntry([linkId, userId]);
 
       if (!userRow) {
@@ -234,7 +219,65 @@ export const DbLinks = {
       return;
     }
   },
-  getUserShls(userId: string): Array<types.HealthLink> | undefined {
+  getManagedShl(linkId: string, managementToken: string): types.HealthLink {
+    const linkRow = db
+      .prepareQuery(`SELECT * from shlink_access where id=? and management_token=?`)
+      .oneEntry([linkId, managementToken]);
+
+    return {
+      id: linkRow.id as string,
+      passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
+      active: Boolean(linkRow.active) as boolean,
+      managementToken: linkRow.management_token as string,
+      config: {
+        exp: linkRow.config_exp as number,
+        passcode: linkRow.config_passcode as string,
+      },
+    };
+  },
+  getUserShl(linkId: string, userId: string): types.HealthLinkFull {
+    try {
+      const row = db
+        .prepareQuery(`
+          SELECT
+            shlink_public.*,
+            shlink_access.config_passcode,
+            shlink_access.config_exp,
+            shlink_access.management_token
+          FROM user_shlink
+          JOIN shlink_public on shlink_public.shlink=user_shlink.shlink
+          JOIN shlink_access on shlink_access.id=user_shlink.shlink
+          WHERE
+            user_shlink.user=?
+            and user_shlink.shlink=?
+            and shlink_access.active=1
+          `)
+        .oneEntry([userId, linkId]);
+      console.log(JSON.stringify(row));
+      const userShl = {
+        id: row.shlink as string,
+        url: row.manifest_url as string,
+        exp: row.config_exp as number,
+        key: row.encryption_key as string & { length: 43 },
+        flag: row.flag as string,
+        label: row.label as string,
+        v: row.version as number,
+        files: this.getFiles(row.id),
+        config: {
+          exp: row.config_exp as number,
+          passcode: row.config_passcode as string
+        },
+        managementToken: row.management_token as string
+      };
+      userShl.files = this.getFiles(userShl.id);
+      console.log(JSON.stringify(userShl));
+      return userShl;
+    } catch (e) {
+      console.error(e);
+      return;
+    }
+  },
+  getUserShls(userId: string): Array<types.HealthLinkFull> | undefined {
     try {
       const userPubShls = db
         .prepareQuery(`
@@ -256,11 +299,10 @@ export const DbLinks = {
             id: row.shlink as string,
             url: row.manifest_url as string,
             exp: row.config_exp as number,
-            key: row.encryption_key as string,
+            key: row.encryption_key as string & { length: 43 },
             flag: row.flag as string,
             label: row.label as string,
             v: row.version as number,
-            files: this.getFiles(row.shlink as string),
             config: {
               exp: row.config_exp as number,
               passcode: row.config_passcode as string
@@ -268,6 +310,9 @@ export const DbLinks = {
             managementToken: row.management_token as string
           }
         });
+      for (const shl of userPubShls) {
+        shl.files = this.getFiles(shl.id);
+      }
       return userPubShls;
     } catch (e) {
       console.error(e);
@@ -458,6 +503,7 @@ export const DbLinks = {
       label: string;
       added_time: string;
       content_type: string;
+      content_hash: string;
     }>(
       `select * from shlink_file where shlink=?`,
       [shlId],
@@ -466,6 +512,7 @@ export const DbLinks = {
       label: f.label,
       added: f.added_time,
       contentType: f.content_type,
+      contentHash: f.content_hash,
     }));
   },
   recordAccess(shlId: string, recipient: string) {

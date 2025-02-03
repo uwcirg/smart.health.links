@@ -36,10 +36,21 @@ export interface HealthLink {
   passcodeFailuresRemaining: number;
 }
 
+export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFailuresRemaining' | 'active'> {
+  files: FileSummary[];
+}
+
 export interface HealthLinkManifestRequest {
   recipient: string;
   passcode?: string;
   embeddedLengthMax?: number;
+}
+
+export interface FileSummary {
+  label?: string;
+  added: string;
+  contentType: string;
+  contentHash: string;
 }
 
 export interface SHLinkManifestFile {
@@ -62,4 +73,5 @@ export interface SHLDecoded {
   key: string & { length: 43 };
   exp?: number;
   label?: string;
+  v?: number;
 }
