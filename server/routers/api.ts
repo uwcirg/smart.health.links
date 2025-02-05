@@ -483,7 +483,8 @@ async function authMiddleware(ctx, next) {
     if (content.userId) {
       console.log("Using user id from body: " + content.userId);
       ctx.state.auth = { sub: content.userId };
-      return next();
+      await next();
+      return;
     }
     console.log("No user id in body");
     throw Error("No body");
@@ -512,7 +513,8 @@ async function authMiddleware(ctx, next) {
     console.log("Using management token: " + tokenValue);
     ctx.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
     console.log("User: " + ctx.state.auth.sub);
-    return next();
+    await next();
+    return;
   }
   // temp
 
@@ -533,7 +535,7 @@ async function authMiddleware(ctx, next) {
     });
     ctx.state.auth = decodedToken.payload;
     
-    return await next();
+    await next();
   
   } catch (error) {
     if (error instanceof jose.jwt.JWTExpired) {
@@ -543,7 +545,7 @@ async function authMiddleware(ctx, next) {
       ctx.response.status = 401;
       ctx.response.body = { message: 'invalid token' };
     }
-    return ctx.response;
+    return;
   }
 }
 
