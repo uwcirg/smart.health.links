@@ -59,7 +59,7 @@ router.post('/shl/:shlId', async (context) => {
     return;
   }
   if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
-    context.response.status = 403;
+    context.response.status = 404;
     context.response.body = { message: "SHL is expired" };
     context.response.headers.set('Content-Type', 'application/json');
     return;
@@ -233,7 +233,7 @@ router.post('/shl', async (context) => {
   console.log("Created link " + newLink.id);
   const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
   const shlinkBare = `shlink:/${encodedPayload}`;
-  context.response.headers.set('Content-Type', 'text/plain');
+  context.response.headers.set('Content-Type', 'text/plain; charset=utf-8');
   context.response.body = shlinkBare;
   return;
 });
@@ -483,8 +483,7 @@ async function authMiddleware(ctx, next) {
     if (content.userId) {
       console.log("Using user id from body: " + content.userId);
       ctx.state.auth = { sub: content.userId };
-      await next();
-      return;
+      return next();
     }
     console.log("No user id in body");
     throw Error("No body");
@@ -513,8 +512,7 @@ async function authMiddleware(ctx, next) {
     console.log("Using management token: " + tokenValue);
     ctx.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
     console.log("User: " + ctx.state.auth.sub);
-    await next();
-    return;
+    return next();
   }
   // temp
 
@@ -535,7 +533,7 @@ async function authMiddleware(ctx, next) {
     });
     ctx.state.auth = decodedToken.payload;
     
-    await next();
+    return next();
   
   } catch (error) {
     if (error instanceof jose.jwt.JWTExpired) {
