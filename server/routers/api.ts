@@ -564,6 +564,7 @@ function prepareMinimalShlForReturn(shl: types.HealthLinkFull) {
   const subset = Object.fromEntries(
     Object.entries(flat).filter(([key]) => keys.includes(key))
   );
+  console.log("Subset: " + JSON.stringify(subset));
   return subset;
 }
 
