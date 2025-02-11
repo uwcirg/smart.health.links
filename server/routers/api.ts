@@ -58,7 +58,7 @@ router.post('/shl/:shlId', async (context) => {
     context.response.headers.set('Content-Type', 'application/json');
     return;
   }
-  if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
+  if (shl.config.exp !== undefined && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
     context.response.status = 404;
     context.response.body = { message: "SHL is expired" };
     context.response.headers.set('Content-Type', 'application/json');
@@ -473,16 +473,16 @@ router.post('/register', (context) => {
 */
 
 /** JWT validation middleware */
-async function authMiddleware(ctx, next) {
+async function authMiddleware(context, next) {
 
   // TODO: temp - remove in favor of jwt
   // Adapter to handle user id in body
   try {
-    const content = await ctx.request.body({ type: 'json' }).value;
+    const content = await context.request.body({ type: 'json' }).value;
     console.log(content);
     if (content.userId) {
       console.log("Using user id from body: " + content.userId);
-      ctx.state.auth = { sub: content.userId };
+      context.state.auth = { sub: content.userId };
       return next();
     }
     console.log("No user id in body");
@@ -492,17 +492,17 @@ async function authMiddleware(ctx, next) {
   }
   // temp
 
-  const token = ctx.request.headers.get('Authorization');
+  const token = context.request.headers.get('Authorization');
   if (!token) {
-    ctx.response.status = 400;
-    ctx.response.body = { message: 'token missing' };
+    context.response.status = 400;
+    context.response.body = { message: 'token missing' };
     return;
   }
 
   const tokenValue = token.split(' ')[1];
   if (!tokenValue) {
-    ctx.response.status = 400;
-    ctx.response.body = { message: 'token missing' };
+    context.response.status = 400;
+    context.response.body = { message: 'token missing' };
     return;
   }
 
@@ -510,8 +510,8 @@ async function authMiddleware(ctx, next) {
   // Adapter to handle management token auth header
   if (db.DbLinks.managementTokenExists(tokenValue)) {
     console.log("Using management token: " + tokenValue);
-    ctx.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
-    console.log("User: " + ctx.state.auth.sub);
+    context.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
+    console.log("User: " + context.state.auth.sub);
     return next();
   }
   // temp
@@ -521,8 +521,8 @@ async function authMiddleware(ctx, next) {
 
   const signingKey = jwks.keys.find((key) => key.kid === tokenValue.kid);
   if (!signingKey) {
-    ctx.response.status = 401;
-    ctx.response.body = { message: 'invalid token' };
+    context.response.status = 401;
+    context.response.body = { message: 'invalid token' };
     return;
   }
 
@@ -531,17 +531,17 @@ async function authMiddleware(ctx, next) {
       algorithms: ['RS256'],
       audience: ['account'],
     });
-    ctx.state.auth = decodedToken.payload;
+    context.state.auth = decodedToken.payload;
     
     return next();
   
   } catch (error) {
     if (error instanceof jose.jwt.JWTExpired) {
-      ctx.response.status = 401;
-      ctx.response.body = { message: 'token expired' };
+      context.response.status = 401;
+      context.response.body = { message: 'token expired' };
     } else {
-      ctx.response.status = 401;
-      ctx.response.body = { message: 'invalid token' };
+      context.response.status = 401;
+      context.response.body = { message: 'invalid token' };
     }
     return;
   }
