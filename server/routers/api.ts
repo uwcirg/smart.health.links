@@ -58,7 +58,7 @@ router.post('/shl/:shlId', async (context) => {
     context.response.headers.set('content-type', 'application/json');
     return;
   }
-  if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
+  if (shl.config.exp !== undefined && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
     context.response.status = 404;
     context.response.body = { message: "SHL is expired" };
     context.response.headers.set('content-type', 'application/json');
