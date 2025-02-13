@@ -95,7 +95,7 @@ router.post('/shl/:shlId', async (context) => {
 
   context.response.headers.set('expires', new Date().toUTCString());
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = {
+  context.response.body = {
     files: db.DbLinks.getManifestFiles(shl.id, embeddedLengthMax)
       .map((f, _i) => ({
         contentType: f.contentType,
@@ -110,6 +110,7 @@ router.post('/shl/:shlId', async (context) => {
         })),
       ),
   });
+  return;
 });
 /** Request SHL file from manifest */
 router.get('/shl/:shlId/file/:fileIndex', (context) => {
@@ -133,6 +134,7 @@ router.get('/shl/:shlId/file/:fileIndex', (context) => {
   const file = db.DbLinks.getFile(context.params.shlId, context.params.fileIndex);
   context.response.headers.set('content-type', 'application/jose');
   context.response.body = file.content;
+  return;
 });
 /** Request SHL endpoint from manifest */
 router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
@@ -165,7 +167,8 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
       enc: 'A256GCM',
     })
     .encrypt(jose.base64url.decode(endpoint.config.key));
-  return (context.response.body = encrypted);
+  context.response.body = encrypted;
+  return;
 });
 /** Check if SHL is active */
 router.get('/shl/:shlId/active', (context) => {
@@ -190,12 +193,12 @@ router.post('/iis', async(context) => {
     headers: content.headers,
     body: JSON.stringify(content)
   });
-  if (response.ok) {
-    const body = await response.json();
-    return (context.response.body = body);
-  } else {
+  if (!response.ok) {
     throw new Error('Unable to fetch IIS immunization data');
-  };
+  }
+  const body = await response.json();
+  context.response.body = body;
+  return;
 });
 
 /**
@@ -215,9 +218,11 @@ router.post('/user', async (context: oak.Context) => {
   const shls = db.DbLinks.getUserShls(context.state.auth.sub)!;
   if (!shls) {
     console.log(`No SHLinks for user ` + context.state.auth.sub);
-    return (context.response.body = []);
+    context.response.body = [];
+    return;
   }
-  return (context.response.body = shls);
+  context.response.body = shls;
+  return;
 });
 /** Create SHL */
 router.post('/shl', async (context) => {
@@ -228,7 +233,8 @@ router.post('/shl', async (context) => {
   const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
   const shlinkBare = `shlink:/${encodedPayload}`;
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = shlinkBare);
+  context.response.body = shlinkBare;
+  return;
 });
 /** Update SHL */
 router.put('/shl/:shlId', async (context) => {
@@ -253,7 +259,8 @@ router.put('/shl/:shlId', async (context) => {
   const updated = db.DbLinks.updateConfig(shl);
   const updatedShl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = prepareShlForReturn(updatedShl));
+  context.response.body = prepareShlForReturn(updatedShl);
+  return;
 });
 /** Deactivate SHL */
 router.delete('/shl/:shlId', async (context) => {
@@ -281,13 +288,13 @@ router.delete('/shl/:shlId', async (context) => {
     }
     const updatedShlList = db.DbLinks.getUserShls(userId)!;
     context.response.headers.set('content-type', 'application/json');
-    return (context.response.body = updatedShlList);
+    context.response.body = updatedShlList;
   } catch {
     context.response.status = 404;
     context.response.body = { message: "SHL does not exist" };
     context.response.headers.set('content-type', 'application/json');
-    return;
   }
+  return;
 });
 /** Reactivate SHL */
 router.put('/shl/:shlId/reactivate', async (context) => {
@@ -302,7 +309,8 @@ router.put('/shl/:shlId/reactivate', async (context) => {
   const success = db.DbLinks.reactivate(shl)!;
   console.log("Reactivated " + context.params.shlId + ": " + success);
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = success);
+  context.response.body = success;
+  return;
 });
 /** Add file to SHL */
 router.post('/shl/:shlId/file', async (context) => {
@@ -348,7 +356,8 @@ router.post('/shl/:shlId/file', async (context) => {
   const added = await db.DbLinks.addFile(shl.id, newFile);
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = prepareShlForReturn(updatedShl));
+  context.response.body = prepareShlForReturn(updatedShl);
+  return;
 });
 /** Delete file from SHL */
 router.delete('/shl/:shlId/file', async (context) => {
@@ -377,7 +386,8 @@ router.delete('/shl/:shlId/file', async (context) => {
   }
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = prepareShlForReturn(updatedShl));
+  context.response.body = prepareShlForReturn(updatedShl);
+  return;
 });
 /** Add endpoint to SHL */
 router.post('/shl/:shlId/endpoint', async (context) => {
@@ -402,7 +412,8 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   console.log("Added", added)
   const updatedShl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   context.response.headers.set('content-type', 'application/json');
-  return (context.response.body = prepareShlForReturn(updatedShl));
+  context.response.body = prepareShlForReturn(updatedShl);
+  return;
 });
 /** Subscribe to SHLs related to a management token */
 router.post('/subscribe', async (context) => {
@@ -417,7 +428,8 @@ router.post('/subscribe', async (context) => {
   setTimeout(() => {
     subscriptionTickets.delete(ticket);
   }, 10000);
-  return (context.response.body = { subscribe: `${env.PUBLIC_URL}/api/subscribe/${ticket}` });
+  context.response.body = { subscribe: `${env.PUBLIC_URL}/api/subscribe/${ticket}` };
+  return;
 });
 /** Get subscribed SHLs for a ticket */
 router.get('/subscribe/:ticket', (context) => {
@@ -446,6 +458,7 @@ router.get('/subscribe/:ticket', (context) => {
       accessLogSubscriptions.get(shl)!.splice(idx, 1);
     }
   });
+  return;
 });
 
 /*
@@ -459,16 +472,16 @@ router.post('/register', (context) => {
 */
 
 /** JWT validation middleware */
-async function authMiddleware(ctx, next) {
+async function authMiddleware(context, next) {
 
   // TODO: temp - remove in favor of jwt
   // Adapter to handle user id in body
   try {
-    const content = await ctx.request.body({ type: 'json' }).value;
+    const content = await context.request.body({ type: 'json' }).value;
     console.log(content);
     if (content.userId) {
       console.log("Using user id from body: " + content.userId);
-      ctx.state.auth = { sub: content.userId };
+      context.state.auth = { sub: content.userId };
       return next();
     }
     console.log("No user id in body");
@@ -478,17 +491,17 @@ async function authMiddleware(ctx, next) {
   }
   // temp
 
-  const token = ctx.request.headers.get('Authorization');
+  const token = context.request.headers.get('Authorization');
   if (!token) {
-    ctx.response.status = 400;
-    ctx.response.body = { message: 'token missing' };
+    context.response.status = 400;
+    context.response.body = { message: 'token missing' };
     return;
   }
 
   const tokenValue = token.split(' ')[1];
   if (!tokenValue) {
-    ctx.response.status = 400;
-    ctx.response.body = { message: 'token missing' };
+    context.response.status = 400;
+    context.response.body = { message: 'token missing' };
     return;
   }
 
@@ -496,9 +509,9 @@ async function authMiddleware(ctx, next) {
   // Adapter to handle management token auth header
   if (db.DbLinks.managementTokenExists(tokenValue)) {
     console.log("Using management token: " + tokenValue);
-    ctx.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
-    console.log("User: " + ctx.state.auth.sub);
-    return await next();
+    context.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
+    console.log("User: " + context.state.auth.sub);
+    return next();
   }
   // temp
 
@@ -507,8 +520,8 @@ async function authMiddleware(ctx, next) {
 
   const signingKey = jwks.keys.find((key) => key.kid === tokenValue.kid);
   if (!signingKey) {
-    ctx.response.status = 401;
-    ctx.response.body = { message: 'invalid token' };
+    context.response.status = 401;
+    context.response.body = { message: 'invalid token' };
     return;
   }
 
@@ -517,17 +530,17 @@ async function authMiddleware(ctx, next) {
       algorithms: ['RS256'],
       audience: ['account'],
     });
-    ctx.state.auth = decodedToken.payload;
+    context.state.auth = decodedToken.payload;
     
-    return await next();
+    return next();
   
   } catch (error) {
     if (error instanceof jose.jwt.JWTExpired) {
-      ctx.response.status = 401;
-      ctx.response.body = { message: 'token expired' };
+      context.response.status = 401;
+      context.response.body = { message: 'token expired' };
     } else {
-      ctx.response.status = 401;
-      ctx.response.body = { message: 'invalid token' };
+      context.response.status = 401;
+      context.response.body = { message: 'invalid token' };
     }
     return;
   }
