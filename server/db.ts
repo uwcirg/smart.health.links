@@ -2,6 +2,7 @@ import { base64url, queryString, sqlite } from './deps.ts';
 import { clientConnectionListener } from './routers/api.ts';
 import * as types from './types.ts';
 import { randomStringWithEntropy } from './util.ts';
+import env from './config.ts';
 
 const { DB } = sqlite;
 
@@ -37,7 +38,11 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
 }
 
 export const DbLinks = {
+  createUserIfNotExists(userid: string) {
+    return db.query(`INSERT or ignore INTO user (id) values (?)`, [userid]);
+  },
   create(config: types.HealthLinkConfig) {
+    this.createUserIfNotExists(config.userId);
     const link = {
       config,
       id: randomStringWithEntropy(32),
@@ -45,7 +50,7 @@ export const DbLinks = {
       active: true,
     };
     db.query(
-      `INSERT INTO shlink (id, management_token, active, config_exp, config_passcode)
+      `INSERT INTO shlink_access (id, management_token, active, config_exp, config_passcode)
       values (:id, :managementToken, :active, :exp, :passcode)`,
       {
         id: link.id,
@@ -56,31 +61,165 @@ export const DbLinks = {
       },
     );
 
-    return link;
+    db.query(
+      `INSERT INTO user_shlink (user, shlink)
+      values (:user, :shlink)`,
+      {
+        user: config.userId,
+        shlink: link.id,
+      },
+    );
+
+    const link_public = {
+      id: link.id,
+      manifestUrl: `${env.PUBLIC_URL}/api/shl/${link.id}`,
+      key: randomStringWithEntropy(32),
+      flag: 'P',
+      label: config.label,
+      version: 1
+    }
+
+    db.query(
+      `INSERT INTO shlink_public (shlink, manifest_url, encryption_key, flag, label, version)
+      values (:shlink, :manifestUrl, :encryptionKey, :flag, :label, :version)`,
+      {
+        shlink: link_public.id,
+        manifestUrl: link_public.manifestUrl,
+        encryptionKey: link_public.key,
+        flag: link_public.flag,
+        label: link_public.label,
+        version: link_public.version
+      },
+    );
+
+    return {
+      id: link_public.id as string,
+      url: link_public.manifestUrl as string,
+      key: link_public.key as string & { length: 43 },
+      flag: link_public.flag as string,
+      label: link_public.label as string,
+      v: link_public.version as number,
+      files: [],
+      config: {
+        exp: link.config.exp as number,
+        passcode: link.config.passcode as string
+      },
+      managementToken: link.managementToken as string
+    };
   },
-  updateConfig(shl: types.HealthLink) {
-    db.query(`UPDATE shlink set config_passcode=:passcode, config_exp=:exp where id=:id`,
-    {
-      id: shl.id,
-      exp: shl.config.exp,
-      passcode: shl.config.passcode
+  getConfig(shlId: types.HealthLink) {
+    let shl = db.prepareQuery(`SELECT * from shlink_access where shlink=?`).oneEntry([shlId]);
+    if (!shl) {
+      return false;
+    }
+    return {
+      exp: shl.config_exp,
+      passcode: shl.config_passcode,
+      label: shl.label
+    };
+  },
+  updateConfig(shl: types.HealthLinkFull) {
+    let pub = db.prepareQuery(`SELECT * from shlink_public where shlink=?`).oneEntry([shl.id]);
+    if (!pub) {
+      return false;
+    }
+    let newFlag = pub.flag;
+    if (!pub.flag.includes('P')) {
+      newFlag = pub.flag + 'P';
+    }
+    db.transaction(() => {
+      db.query(
+        `UPDATE shlink_public set flag=:flag, label=:label where shlink=:id`,
+        {
+          id: shl.id,
+          flag: newFlag,
+          label: shl.label
+        }
+      );
+      db.query(
+        `UPDATE shlink_access set config_passcode=:passcode, config_exp=:exp where id=:id`,
+        {
+          id: shl.id,
+          exp: shl.config.exp,
+          passcode: shl.config.passcode
+        }
+      );
     });
     return true;
   },
   deactivate(shl: types.HealthLink) {
-    db.query(`UPDATE shlink set active=false where id=?`, [shl.id]);
-    return true;
+    try {
+      db.query(`UPDATE shlink_access set active=false where id=?`, [shl.id]);
+    } catch (e) {
+      return false;
+    }
+    return shl.id;
   },
-  reactivate(linkId: string, managementToken: string): boolean {
-    db.query(`UPDATE shlink set active=true, passcode_failures_remaining=5 where id=? and management_token=?`, [linkId, managementToken]);
+  reactivate(shl: types.HealthLink): boolean {
+    db.query(`UPDATE shlink_access set active=true, passcode_failures_remaining=5 where id=?`, [shl.id]);
     return true;
   },
   linkExists(linkId: string): boolean {
-    return Boolean(db.query(`SELECT * from shlink where id=? and active=1`, [linkId]));
+    return Boolean(db.query(`SELECT * from shlink_access where id=? and active=1`, [linkId]));
+  },
+  userExists(userId: string): boolean {
+    return Boolean(db.query(`SELECT * from user where id=?`, [userId]));
+  },
+  managementTokenExists(managementToken: string): boolean {
+    return Boolean(db.query(`SELECT * from shlink_access where management_token=?`, [managementToken]));
+  },
+  getManagementTokenUserInternal(managementToken: string): string {
+    const result = db.prepareQuery(
+      `SELECT * from shlink_access JOIN user_shlink on shlink_access.id=user_shlink.shlink where management_token=?`
+    ).oneEntry([managementToken]);
+    return result.user as string;
+  },
+  getShlInternal(linkId: string): types.HealthLink {
+    const linkRow = db.prepareQuery(`SELECT * from shlink_access where id=?`).oneEntry([linkId]);
+    return {
+      id: linkRow.id as string,
+      passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
+      active: Boolean(linkRow.active) as boolean,
+      managementToken: linkRow.management_token as string,
+      config: {
+        exp: linkRow.config_exp as number,
+        passcode: linkRow.config_passcode as string,
+      },
+    };
+  },
+  getUserShlInternal(linkId: string, userId: string): types.HealthLink {
+    try {
+      const userRow = db
+        .prepareQuery(`
+          SELECT * from user_shlink where shlink=? and user=?`)
+        .oneEntry([linkId, userId]);
+
+      if (!userRow) {
+        return;
+      }
+      
+      const linkRow = db
+        .prepareQuery(`SELECT * from shlink_access where id=?`)
+        .oneEntry([linkId]);
+  
+      return {
+        id: linkRow.id as string,
+        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
+        active: Boolean(linkRow.active) as boolean,
+        managementToken: linkRow.management_token as string,
+        config: {
+          exp: linkRow.config_exp as number,
+          passcode: linkRow.config_passcode as string,
+        },
+      };
+    } catch (e) {
+      console.error(e);
+      return;
+    }
   },
   getManagedShl(linkId: string, managementToken: string): types.HealthLink {
     const linkRow = db
-      .prepareQuery(`SELECT * from shlink where id=? and management_token=?`)
+      .prepareQuery(`SELECT * from shlink_access where id=? and management_token=?`)
       .oneEntry([linkId, managementToken]);
 
     return {
@@ -94,55 +233,147 @@ export const DbLinks = {
       },
     };
   },
-  getShlInternal(linkId: string): types.HealthLink {
-    const linkRow = db.prepareQuery(`SELECT * from shlink where id=?`).oneEntry([linkId]);
-    return {
-      id: linkRow.id as string,
-      passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
-      active: Boolean(linkRow.active) as boolean,
-      managementToken: linkRow.management_token as string,
-      config: {
-        exp: linkRow.config_exp as number,
-        passcode: linkRow.config_passcode as string,
-      },
-    };
+  getUserShl(linkId: string, userId: string): types.HealthLinkFull {
+    try {
+      const row = db
+        .prepareQuery(`
+          SELECT
+            shlink_public.*,
+            shlink_access.config_passcode,
+            shlink_access.config_exp,
+            shlink_access.management_token
+          FROM user_shlink
+          JOIN shlink_public on shlink_public.shlink=user_shlink.shlink
+          JOIN shlink_access on shlink_access.id=user_shlink.shlink
+          WHERE
+            user_shlink.user=?
+            and user_shlink.shlink=?
+            and shlink_access.active=1
+          `)
+        .oneEntry([userId, linkId]);
+      console.log(JSON.stringify(row));
+      const userShl = {
+        id: row.shlink as string,
+        url: row.manifest_url as string,
+        exp: row.config_exp as number,
+        key: row.encryption_key as string & { length: 43 },
+        flag: row.flag as string,
+        label: row.label as string,
+        v: row.version as number,
+        files: this.getFiles(row.id),
+        config: {
+          exp: row.config_exp as number,
+          passcode: row.config_passcode as string
+        },
+        managementToken: row.management_token as string
+      };
+      userShl.files = this.getFiles(userShl.id);
+      console.log(JSON.stringify(userShl));
+      return userShl;
+    } catch (e) {
+      console.error(e);
+      return;
+    }
   },
-  async addFile(linkId: string, file: types.HealthLinkFile): Promise<string> {
+  getUserShls(userId: string): Array<types.HealthLinkFull> | undefined {
+    try {
+      const userPubShls = db
+        .prepareQuery(`
+          SELECT
+            shlink_public.*,
+            shlink_access.config_passcode,
+            shlink_access.config_exp,
+            shlink_access.management_token
+          FROM user_shlink
+          JOIN shlink_public on shlink_public.shlink=user_shlink.shlink
+          JOIN shlink_access on shlink_access.id=user_shlink.shlink
+          WHERE
+            user_shlink.user=?
+            and shlink_access.active=1
+          `)
+        .allEntries([userId])
+        .map( row => {
+          return {
+            id: row.shlink as string,
+            url: row.manifest_url as string,
+            exp: row.config_exp as number,
+            key: row.encryption_key as string & { length: 43 },
+            flag: row.flag as string,
+            label: row.label as string,
+            v: row.version as number,
+            config: {
+              exp: row.config_exp as number,
+              passcode: row.config_passcode as string
+            },
+            managementToken: row.management_token as string
+          }
+        });
+      for (const shl of userPubShls) {
+        shl.files = this.getFiles(shl.id);
+      }
+      return userPubShls;
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  async addFile(linkId: string, file: types.HealthLinkFile) {
     const hash = await crypto.subtle.digest('SHA-256', file.content);
     const hashEncoded = base64url.encode(hash);
-    db.query(`insert or ignore into cas_item(hash, content) values(:hashEncoded, :content)`, {
-      hashEncoded,
-      content: file.content,
-    });
-
-    db.query(
-      `insert into shlink_file(shlink, content_type, content_hash) values (:linkId, :contentType, :hashEncoded)`,
-      {
-        linkId,
-        contentType: file.contentType,
-        hashEncoded,
-      },
-    );
+    try {
+      db.transaction(() => {
+        db.query(`insert or ignore into cas_item(hash, content) values(:hashEncoded, :content)`, {
+          hashEncoded,
+          content: file.content,
+        });
+    
+        db.query(
+          `insert into shlink_file(shlink, content_type, content_hash) values (:linkId, :contentType, :hashEncoded)`,
+          {
+            linkId,
+            contentType: file.contentType,
+            hashEncoded,
+          },
+        );
+      });
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
 
     return hashEncoded;
   },
   async deleteFile(linkId: string, content: Uint8Array) {
     const hash = await crypto.subtle.digest('SHA-256', content);
     const hashEncoded = base64url.encode(hash);
-
-    db.query(
-      `delete from shlink_file where shlink = :linkId and content_hash = :hashEncoded`,
-      {
-        linkId,
-        hashEncoded,
-      }
-    );
-
+    try {
+      db.query(
+        `delete from shlink_file where shlink = :linkId and content_hash = :hashEncoded`,
+        {
+          linkId,
+          hashEncoded,
+        }
+      );
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+    // Hard delete
     // db.query(`delete from cas_item where hash = :hashEncoded and content = :content`,
     // {
     //   hashEncoded,
     //   content: file.content,
     // });
+
+    return hashEncoded as string;
+  },
+  async deleteAllFiles(linkId: string) {
+
+    db.query(
+      `delete from shlink_file where shlink = :linkId`,
+      {
+        linkId
+      }
+    );
 
     return true;
   },
@@ -265,8 +496,25 @@ export const DbLinks = {
       contentType: fileRow[0].content_type,
     };
   },
+  getFiles(shlId: string): types.HealthLinkFile[] {
+    const files = db.queryEntries<{
+      label: string;
+      added_time: string;
+      content_type: string;
+      content_hash: string;
+    }>(
+      `select * from shlink_file where shlink=?`,
+      [shlId],
+    );
+    return files.map((f) => ({
+      label: f.label,
+      added: f.added_time,
+      contentType: f.content_type,
+      contentHash: f.content_hash,
+    }));
+  },
   recordAccess(shlId: string, recipient: string) {
-    const q = db.prepareQuery(`insert into  shlink_access(shlink, recipient) values (?, ?)`);
+    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient) values (?, ?)`);
     q.execute([shlId, recipient]);
 
     clientConnectionListener({
@@ -276,7 +524,7 @@ export const DbLinks = {
   },
   recordPasscodeFailure(shlId: string) {
     const q = db.prepareQuery(
-      `update shlink set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
+      `update shlink_access set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
     );
     q.execute([shlId]);
   },
