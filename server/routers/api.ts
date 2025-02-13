@@ -213,6 +213,15 @@ router.use(authMiddleware);
  * TODO: Change to GET after committing to jwt auth
  * Current body required: { userId: string }
 */
+/** Simple auth check endpoint to open auth middleware check to external services */
+router.post('/authcheck', async (context) => {
+  const userId = context.state.auth.sub;
+  if (!userId) {
+    context.response.status = 401;
+    context.response.body = { message: `Unauthorized` };
+    context.response.headers.set('Content-Type', 'application/json');
+  }
+});
 /** Get SHLs for user */
 router.post('/user', async (context: oak.Context) => {
   const shls = db.DbLinks.getUserShls(context.state.auth.sub)!;
