@@ -232,7 +232,7 @@ router.post('/shl', async (context) => {
   console.log("Created link " + newLink.id);
   const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
   const shlinkBare = `shlink:/${encodedPayload}`;
-  context.response.headers.set('content-type', 'application/json');
+  context.response.headers.set('content-type', 'text/plain');
   context.response.body = shlinkBare;
   return;
 });
