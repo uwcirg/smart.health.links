@@ -109,7 +109,7 @@ router.post('/shl/:shlId', async (context) => {
           location: `${env.PUBLIC_URL}/api/shl/${shl.id}/endpoint/${e.id}?ticket=${ticket}`,
         })),
       ),
-  });
+  };
   return;
 });
 /** Request SHL file from manifest */
