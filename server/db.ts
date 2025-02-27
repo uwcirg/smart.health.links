@@ -169,10 +169,14 @@ export const DbLinks = {
     return Boolean(db.query(`SELECT * from shlink_access where management_token=?`, [managementToken]));
   },
   getManagementTokenUserInternal(managementToken: string): string {
-    const result = db.prepareQuery(
-      `SELECT * from shlink_access JOIN user_shlink on shlink_access.id=user_shlink.shlink where management_token=?`
-    ).oneEntry([managementToken]);
-    return result.user as string;
+    try {
+      const result = db.prepareQuery(
+        `SELECT * from shlink_access JOIN user_shlink on shlink_access.id=user_shlink.shlink where management_token=?`
+      ).oneEntry([managementToken]);
+      return result.user as string;
+    } catch (e) {
+      return undefined;
+    }
   },
   getShlInternal(linkId: string): types.HealthLink {
     const linkRow = db.prepareQuery(`SELECT * from shlink_access where id=?`).oneEntry([linkId]);

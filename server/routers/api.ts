@@ -214,13 +214,19 @@ router.use(authMiddleware);
  * Current body required: { userId: string }
 */
 /** Simple auth check endpoint to open auth middleware check to external services */
-router.post('/authcheck', async (context) => {
+router.post('/authcheck', async (context: oak.Context) => {
   const userId = context.state.auth.sub;
+  console.log("Authcheck: " + userId);
   if (!userId) {
     context.response.status = 401;
     context.response.body = { message: `Unauthorized` };
     context.response.headers.set('Content-Type', 'application/json');
+    return;
   }
+  context.response.headers.set('Content-Type', 'application/json');
+  context.response.status = 200;
+  context.response.body = { authorized: true };
+  return;
 });
 /** Get SHLs for user */
 router.post('/user', async (context: oak.Context) => {
@@ -517,40 +523,32 @@ async function authMiddleware(context, next) {
   // TODO: temp - remove in favor of jwt
   // Adapter to handle management token auth header
   if (db.DbLinks.managementTokenExists(tokenValue)) {
-    console.log("Using management token: " + tokenValue);
-    context.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
-    console.log("User: " + context.state.auth.sub);
-    return next();
+    console.log("Trying management token: " + tokenValue);
+    let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
+    console.log("MT user: " + JSON.stringify(mtUser));
+    if (mtUser) {
+      context.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
+      console.log("User: " + context.state.auth.sub);
+      return next();
+    }
   }
   // temp
 
-  const jwksClient = await fetch(env.JWKS_URL);
-  const jwks = await jwksClient.json();
-
-  const signingKey = jwks.keys.find((key) => key.kid === tokenValue.kid);
-  if (!signingKey) {
-    context.response.status = 401;
-    context.response.body = { message: 'invalid token' };
-    return;
-  }
+  const jwks = await jose.createRemoteJWKSet(new URL(env.JWKS_URL));
 
   try {
-    const decodedToken = await jose.jwtVerify(tokenValue, signingKey, {
+    const verifiedDecodedToken = await jose.jwtVerify(tokenValue, jwks, {
       algorithms: ['RS256'],
       audience: ['account'],
     });
-    context.state.auth = decodedToken.payload;
+    context.state.auth = verifiedDecodedToken.payload;
     
     return next();
   
   } catch (error) {
-    if (error instanceof jose.jwt.JWTExpired) {
-      context.response.status = 401;
-      context.response.body = { message: 'token expired' };
-    } else {
-      context.response.status = 401;
-      context.response.body = { message: 'invalid token' };
-    }
+    console.log(JSON.stringify(error));
+    context.response.status = 401;
+    context.response.body = { message: 'invalid token' };
     return;
   }
 }
