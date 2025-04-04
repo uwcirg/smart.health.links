@@ -5,6 +5,7 @@ interface Config {
   APP_VERSION_STRING?: string;
   PORT?: number;
   JWKS_URL?: string;
+  DIR?: string;
 };
 
 const defaultEnv: Config = {
@@ -14,7 +15,15 @@ const defaultEnv: Config = {
   APP_VERSION_STRING: "",
   PORT: 8000,
   JWKS_URL: "",
+  DIR: ".",
 };
+
+const testEnv: Config = {
+  ...defaultEnv,
+  PUBLIC_URL: 'http://localhost:8888',
+  PORT: 8888,
+  DIR: "tests",
+}
 
 async function envOrDefault(variable: string, defaultValue: string | number) {
   const havePermission = (await Deno.permissions.query({ name: 'env', variable })).state === 'granted';
@@ -28,9 +37,9 @@ async function envOrDefault(variable: string, defaultValue: string | number) {
   }
   return typeof defaultValue === 'number' ? parseFloat(ret) : ret;
 }
-
+const fallback = Deno.env.get("TEST") ? testEnv : defaultEnv;
 const env = Object.fromEntries(
-  await Promise.all(Object.entries(defaultEnv).map(async ([k, v]) => [k, await envOrDefault(k, v)])),
+  await Promise.all(Object.entries(fallback).map(async ([k, v]) => [k, await envOrDefault(k, v)])),
 ) as typeof defaultEnv;
 
 export default env;

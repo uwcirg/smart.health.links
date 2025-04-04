@@ -42,10 +42,9 @@ router.post('/shl/:shlId', async (context) => {
     return;
   }
 
-  let shl: types.HealthLink;
-  try {
-    shl = db.DbLinks.getShlInternal(context.params.shlId);
-  } catch {
+  let shl: types.HealthLink | undefined = db.DbLinks.getShlInternal(context.params.shlId);
+  
+  if (shl === undefined) {
     context.response.status = 404;
     context.response.body = { message: "SHL does not exist or has been deactivated."};
     context.response.headers.set('content-type', 'application/json');
@@ -100,13 +99,13 @@ router.post('/shl/:shlId', async (context) => {
       .map((f, _i) => ({
         contentType: f.contentType,
         embedded: f.content?.length ? new TextDecoder().decode(f.content) : undefined,
-        location: `${env.PUBLIC_URL}/api/shl/${shl.id}/file/${f.hash}?ticket=${ticket}`,
+        location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/file/${f.hash}?ticket=${ticket}`,
       }))
       .concat(
         db.DbLinks.getManifestEndpoints(shl.id).map((e) => ({
           contentType: 'application/smart-api-access',
           embedded: undefined,
-          location: `${env.PUBLIC_URL}/api/shl/${shl.id}/endpoint/${e.id}?ticket=${ticket}`,
+          location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/endpoint/${e.id}?ticket=${ticket}`,
         })),
       ),
   };
@@ -156,6 +155,12 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
   }
 
   const endpoint = await db.DbLinks.getEndpoint(context.params.shlId, context.params.endpointId);
+  if (!endpoint) {
+    context.response.status = 404;
+    context.response.body = { message: "Endpoint not found" };
+    context.response.headers.set('content-type', 'application/json');
+    return;
+  }
   context.response.headers.set('content-type', 'application/jose');
   const payload = JSON.stringify({
     aud: endpoint.endpointUrl,
@@ -242,7 +247,6 @@ router.post('/user', async (context: oak.Context) => {
 /** Create SHL */
 router.post('/shl', async (context) => {
   const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
-  console.log("Config posted:" + JSON.stringify(config));
   const newLink = db.DbLinks.create(config);
   console.log("Created link " + newLink.id);
   const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
@@ -377,7 +381,7 @@ router.post('/shl/:shlId/file', async (context) => {
 /** Delete file from SHL */
 router.delete('/shl/:shlId/file', async (context) => {
   const userId = context.state.auth.sub;
-  const currentFileHash = await context.request.body({type: 'bytes'});
+  const currentFileHash = await context.request.body({type: 'text'}).value;
   if (!db.DbLinks.linkExists(context.params.shlId)) {
     context.response.status = 404;
     context.response.body = { message: "SHL does not exist or has been deactivated." };
@@ -392,7 +396,7 @@ router.delete('/shl/:shlId/file', async (context) => {
     return;
   }
   
-  const deleted = db.DbLinks.deleteFile(shl.id, await currentFileHash.value);
+  const deleted = db.DbLinks.deleteFile(shl.id, currentFileHash);
   if (!db.DbLinks.linkExists(context.params.shlId)) {
     context.response.status = 500;
     context.response.body = { message: "Failed to delete file" };
@@ -432,18 +436,20 @@ router.post('/shl/:shlId/endpoint', async (context) => {
 });
 /** Subscribe to SHLs related to a management token */
 router.post('/subscribe', async (context) => {
+  const userId = context.state.auth.sub;
   const shlSet: { shlId: string; managementToken: string }[] = await context.request.body({ type: 'json' }).value;
   const managedLinks = shlSet.map((req) => db.DbLinks.getManagedShl(req.shlId, req.managementToken));
 
   const ticket = randomStringWithEntropy(32, 'subscription-ticket-');
   subscriptionTickets.set(
     ticket,
-    managedLinks.map((l) => l.id),
+    managedLinks.map((l) => l?.id ?? '' ),
   );
   setTimeout(() => {
     subscriptionTickets.delete(ticket);
   }, 10000);
   context.response.body = { subscribe: `${env.PUBLIC_URL}/api/subscribe/${ticket}` };
+  context.response.status = 200;
   return;
 });
 /** Get subscribed SHLs for a ticket */
@@ -473,6 +479,7 @@ router.get('/subscribe/:ticket', (context) => {
       accessLogSubscriptions.get(shl)!.splice(idx, 1);
     }
   });
+  context.response.status = 200;
   return;
 });
 
@@ -487,13 +494,12 @@ router.post('/register', (context) => {
 */
 
 /** JWT validation middleware */
-async function authMiddleware(context, next) {
+async function authMiddleware(context: oak.Context, next: () => Promise<unknown>) {
 
   // TODO: temp - remove in favor of jwt
   // Adapter to handle user id in body
   try {
     const content = await context.request.body({ type: 'json' }).value;
-    console.log(content);
     if (content.userId) {
       console.log("Using user id from body: " + content.userId);
       context.state.auth = { sub: content.userId };
@@ -533,6 +539,12 @@ async function authMiddleware(context, next) {
     }
   }
   // temp
+  
+  if (!env.JWKS_URL) {
+    context.response.status = 401;
+    context.response.body = { message: 'invalid token' };
+    return;
+  }
 
   const jwks = await jose.createRemoteJWKSet(new URL(env.JWKS_URL));
 
@@ -567,14 +579,14 @@ function prepareMinimalShlForReturn(shl: types.HealthLinkFull) {
     "label",
     "v",
   ];
-  const subset = Object.fromEntries(
+  const subset: types.SHLDecoded = Object.fromEntries(
     Object.entries(flat).filter(([key]) => keys.includes(key))
-  );
+  ) as unknown as types.SHLDecoded;
   return subset;
 }
 
 function prepareShlForReturn(shl: types.HealthLinkFull) {
-  let flat = {
+  let flat: types.HealthLinkFullReturn = {
     ...shl,
     ...shl.config,
   };

@@ -1,32 +1,23 @@
-# SMART Health Links Demo
+# SHLinks Demo Server
 
-## Server
+* Creates new SHLinks and adds files to them
+* Authorizes access
+* Shares files with authorized clients'
 
-* Demo hosted at https://smart-health-links-server.cirg.washington.edu
-* Allows external consumer apps to create a SHL and add files to it
-* Allows SHL clients to connect and pull data from any active SHL
+# Run
+```
+deno run --allow-env="PORT","PUBLIC_URL","EMBEDDED_LENGTH_MAX" --allow-read=".","./db" --allow-write="./db" --allow-net --watch server.ts
+```
 
-## UI
+# Test
 
-* Demo hosted at https://smart-health-links-ui.cirg.washington.edu
-* Simulates a state immunization portal or consumer health wallet UX
-  * Comes with a built-in set of immunizations (synthetic data for a school-age child)
-* Connects to server component for backend storage
+```sh
+deno test --allow-env --allow-read=".","./db" --allow-write="./db" --allow-net
+```
 
-## Client
-* Deployed SHL content viewer app hosted at https://smart-health-links-demo.cirg.washington.edu
-* Deployed library hosted at https://smart-health-links-demo.cirg.washington.edu/index.js
-* Generic library that supports
-  * Inspecting a SHL with the `.flags({shl: "shlink:/..."})` function
-  * Connecting to a SHL with the `.connect({shl: "shlink:/..."})` function
-  * Pulling data from a SHL with the `.pull(connection)` function
+# Build in Docker
 
-## Docker
-
-The server, UI and client containers are managed by docker compose.
-
-From the project root, run
-
-```bash
-docker-compose build && docker-compose up -d
+```sh
+docker build -t vaxx.link .
+docker run --rm -it -p 8000:8000 vaxx.link
 ```
