@@ -36,50 +36,32 @@ router.post('/shl/:shlId', async (context) => {
   const config: types.HealthLinkManifestRequest = await context.request.body({ type: 'json' }).value;
   const embeddedLengthMax = Math.min(env.EMBEDDED_LENGTH_MAX, config.embeddedLengthMax !== undefined ? config.embeddedLengthMax : Infinity);
   if (!config.recipient) {
-    context.response.status = 400;
-    context.response.body = { message: "Missing recipient in request body" };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(400, "Missing recipient in request body");
     return;
   }
 
   let shl: types.HealthLink | undefined = db.DbLinks.getShlInternal(context.params.shlId);
   
   if (shl === undefined) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated."};
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
 
   if (!shl?.active) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL is expired" };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL is expired");
     return;
   }
   if (shl.config.passcode && !("passcode" in config)) {
-    context.response.status = 401;
-    context.response.body = {
-      message: "Passcode required",
-      remainingAttempts: shl.passcodeFailuresRemaining
-    }
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Passcode required", {remainingAttempts: shl.passcodeFailuresRemaining});
     return;
   }
   if (shl.config.passcode && shl.config.passcode !== config.passcode) {
     db.DbLinks.recordPasscodeFailure(shl.id);
-    context.response.status = 401;
-    context.response.body = {
-      message: "Incorrect password",
-      remainingAttempts: shl.passcodeFailuresRemaining - 1
-    };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Incorrect passcode", {remainingAttempts: shl.passcodeFailuresRemaining - 1});
     return;
   }
 
@@ -116,17 +98,13 @@ router.get('/shl/:shlId/file/:fileIndex', (context) => {
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
   if (!ticket) {
     console.log('Cannot request SHL without a valid ticket');
-    context.response.status = 401;
-    context.response.body = { message: "Unauthorized" }
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
 
   if (ticket.shlId !== context.params.shlId) {
     console.log('Ticket is not valid for ' + context.params.shlId);
-    context.response.status = 401;
-    context.response.body = { message: "Unauthorized" }
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
 
@@ -140,25 +118,19 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
   if (!ticket) {
     console.log('Cannot request SHL without a valid ticket');
-    context.response.status = 401;
-    context.response.body = { message: "Unauthorized" }
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
 
   if (ticket.shlId !== context.params.shlId) {
     console.log('Ticket is not valid for ' + context.params.shlId);
-    context.response.status = 401;
-    context.response.body = { message: "Unauthorized" };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
 
   const endpoint = await db.DbLinks.getEndpoint(context.params.shlId, context.params.endpointId);
   if (!endpoint) {
-    context.response.status = 404;
-    context.response.body = { message: "Endpoint not found" };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "Endpoint not found.");
     return;
   }
   context.response.headers.set('content-type', 'application/jose');
@@ -179,9 +151,7 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
 router.get('/shl/:shlId/active', (context) => {
   const shl = db.DbLinks.getShlInternal(context.params.shlId);
   if (!shl) {
-    context.response.status = 404;
-    context.response.body = { message: `Deleted` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   const isActive = (shl && shl.active);
@@ -223,9 +193,7 @@ router.post('/authcheck', async (context: oak.Context) => {
   const userId = context.state.auth.sub;
   console.log("Authcheck: " + userId);
   if (!userId) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('Content-Type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
   context.response.headers.set('Content-Type', 'application/json');
@@ -260,16 +228,12 @@ router.put('/shl/:shlId', async (context) => {
   const userId = context.state.auth.sub;
   const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
   shl.config.exp = config.exp ?? shl.config.exp;
@@ -285,33 +249,25 @@ router.put('/shl/:shlId', async (context) => {
 router.delete('/shl/:shlId', async (context) => {
   const userId = context.state.auth.sub;
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   try {
     const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
     if (!shl) {
-      context.response.status = 401;
-      context.response.body = { message: `Unauthorized` };
-      context.response.headers.set('content-type', 'application/json');
+      context.throw(401, "Unauthorized");
       return;
     }
     const deactivated = db.DbLinks.deactivate(shl);
     if (!deactivated) {
-      context.response.status = 500;
-      context.response.body = { message: "Failed to delete SHL" };
-      context.response.headers.set('content-type', 'application/json');
+      context.throw(500, "Failed to delete SHL");
       return;
     }
     const updatedShlList = db.DbLinks.getUserShls(userId)!;
     context.response.headers.set('content-type', 'application/json');
     context.response.body = updatedShlList;
   } catch {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist" };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
   }
   return;
 });
@@ -320,9 +276,7 @@ router.put('/shl/:shlId/reactivate', async (context) => {
   const userId = context.state.auth.sub;
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
   const success = db.DbLinks.reactivate(shl)!;
@@ -340,30 +294,22 @@ router.post('/shl/:shlId/file', async (context) => {
   });
 
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
 
   let contentLength = context.request.headers.get('content-length');
   if (contentLength === null) {
-    context.response.status = 400;
-    context.response.body = { message: `Missing content length` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(400, "Missing content length");
     return;
   }
   if (Number(contentLength) > fileSizeMax) {
-    context.response.status = 413;
-    context.response.body = { message: `Size limit exceeded` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(413, "Size limit exceeded");
     return;
   }
 
@@ -383,24 +329,18 @@ router.delete('/shl/:shlId/file', async (context) => {
   const userId = context.state.auth.sub;
   const currentFileHash = await context.request.body({type: 'text'}).value;
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
   
   const deleted = db.DbLinks.deleteFile(shl.id, currentFileHash);
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 500;
-    context.response.body = { message: "Failed to delete file" };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(500, "Failed to delete file");
     return;
   }
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
@@ -414,16 +354,12 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   const config: types.HealthLinkEndpoint = await context.request.body({ type: 'json' }).value;
 
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.response.status = 404;
-    context.response.body = { message: "SHL does not exist or has been deactivated." };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.response.status = 401;
-    context.response.body = { message: `Unauthorized` };
-    context.response.headers.set('content-type', 'application/json');
+    context.throw(401, "Unauthorized");
     return;
   }
 
@@ -514,15 +450,13 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   const token = context.request.headers.get('Authorization');
   if (!token) {
-    context.response.status = 400;
-    context.response.body = { message: 'token missing' };
+    context.throw(400, "Missing token in request header");
     return;
   }
 
   const tokenValue = token.split(' ')[1];
   if (!tokenValue) {
-    context.response.status = 400;
-    context.response.body = { message: 'token missing' };
+    context.throw(400, "Missing token in request header");
     return;
   }
 
@@ -541,8 +475,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
   // temp
   
   if (!env.JWKS_URL) {
-    context.response.status = 401;
-    context.response.body = { message: 'invalid token' };
+    context.throw(401, "Invalid token");
     return;
   }
 
@@ -559,8 +492,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
   
   } catch (error) {
     console.log(JSON.stringify(error));
-    context.response.status = 401;
-    context.response.body = { message: 'invalid token' };
+    context.throw(401, "Invalid token");
     return;
   }
 }
