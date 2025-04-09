@@ -38,6 +38,3 @@ jobs:
 
           # create docker image tags to match git tags
           tag_names: true
-
-          # build Dockerfile in server/ service directory
-          workdir: server
