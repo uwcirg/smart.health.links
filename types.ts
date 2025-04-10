@@ -135,3 +135,34 @@ export interface shlink_access_log {
   recipient?: string;
   access_time?: string;
 }
+
+type Action = 'create' | 'read' | 'update' | 'delete' | 'execute' | 'login' | 'logout';
+type Severity = 'critical' | 'error' | 'warning' | 'info' | 'debug';
+
+export interface LogMessage {
+  version: string;
+  severity: Severity;
+  action: Action;
+  occurred?: string; // datetime of event
+  subject?: string; // subject id
+  agent?: {
+    ip_address?: string;
+    user_agent?: string | null;
+    type?: string; // e.g. system, user
+    who?: string; // agent id
+  };
+  source?: {
+    observer?: string; // system url
+    type?: string; // system/project name
+    version?: string; // system version
+  }
+  entity?: {
+    detail?: {[key: string] : string}; // additional info
+    query?: string; // query parameters
+  };
+  outcome?: string; // failure or warning details
+}
+
+export interface LogMessageSimple extends Partial<LogMessage> {
+  action: Action;
+}

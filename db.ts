@@ -65,11 +65,8 @@ export const DbLinks = {
   createUserIfNotExists(userid: string) {
     return db.query(`INSERT or ignore INTO user (id) values (?)`, [userid]);
   },
-  create(config: types.HealthLinkConfig) {
-    if (!config.userId) {
-      throw new Error('Missing userId');
-    }
-    this.createUserIfNotExists(config.userId);
+  create(config: types.HealthLinkConfig, userId: string): types.HealthLinkFull {
+    this.createUserIfNotExists(userId);
     const link = {
       config,
       id: randomStringWithEntropy(32),
@@ -269,6 +266,14 @@ export const DbLinks = {
           passcode: linkRow.config_passcode as string,
         },
       };
+    } catch (e) {
+      return undefined;
+    }
+  },
+  getShlOwner(linkId: string): string | undefined {
+    try {
+      const result = db.prepareQuery(`SELECT * from user_shlink where shlink=?`).oneEntry([linkId]);
+      return result.user as string;
     } catch (e) {
       return undefined;
     }

@@ -252,7 +252,10 @@ Deno.test({
         shl!.id,
         { passcode: 'wrong', recipient: 'Test SHL Client' }
       );
+      const manifestContent = await manifestResponse.json();
       assertions.assertEquals(manifestResponse.status, 401);
+      assertions.assertExists((manifestContent).details.remainingAttempts);
+      assertions.assert((manifestContent).details.remainingAttempts > 0);
     });
     await t.step('Request manifest with missing passcode', async function () {
       const manifestResponse = await queryManifest(

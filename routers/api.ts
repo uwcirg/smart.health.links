@@ -26,42 +26,120 @@ interface ManifestAccessTicket {
 }
 const manifestAccessTickets: Map<string, ManifestAccessTicket> = new Map();
 
+
+function applyLogFallbacks(logMessage: types.LogMessageSimple, defaults: Partial<types.LogMessage>) {
+  if (logMessage.entity) {
+    logMessage.entity.detail = {...(defaults.entity?.detail ?? {}), ...(logMessage.entity?.detail ?? {})}; 
+  }
+  logMessage.entity = {...defaults.entity, ...logMessage.entity};
+  logMessage.source = {...defaults.source, ...logMessage.source};
+  logMessage.agent = {...defaults.agent, ...logMessage.agent};
+  return {...defaults, ...logMessage};
+}
+
+function log(context: oak.Context, msg: types.LogMessageSimple) {  
+  let logMessage: types.LogMessage = {
+    version: "3.0",
+    severity: "info",
+    action: msg.action,
+    occurred: new Date().toISOString(),
+    subject: context.state.auth?.sub,
+    agent: {
+      ip_address: context.request.ip,
+      type: "user", // e.g. system, user
+      who: context.state.auth?.sub,
+      user_agent: context.request.headers.get('user-agent')
+    },
+    source: {
+      observer: env.PUBLIC_URL, // system url
+      type: "shl-server", // system/project name
+      version: env.APP_VERSION_STRING, // system version
+    },
+    entity: {
+      detail: {
+        url: context.request.url.toString(),
+        method: context.request.method,
+      }
+    }
+  };
+
+  logMessage = (msg ? applyLogFallbacks(msg, logMessage) : logMessage) as types.LogMessage;
+  console.log(JSON.stringify(logMessage)); // for stdout reading
+}
+
+function error(context: oak.Context, content: types.LogMessageSimple, status: number, message: string, props?: { details: {[key: string]: unknown } }) {
+  content.severity = "error";
+  content.outcome = `${status} ${message}`;
+  log(context, content);
+  context.throw(status, message, props);
+}
+
 export const router = new oak.Router();
+
+router.post('/log', async (context: oak.Context) => {
+  const content: types.LogMessageSimple = await context.request.body({ type: 'json' }).value;
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    entity: { detail: {
+      action: "Post log message",
+    }}
+  };
+  if (!content.action) {
+    error(context, logMessage, 400, "Missing action in request body");
+    return;
+  }
+
+  let defaults: Partial<types.LogMessage> = {
+    source: {
+      type: "external-client"
+    }
+  };
+  const contentWithFallbacks = applyLogFallbacks(content, defaults);
+  log(context, contentWithFallbacks);
+  context.response.status = 200;
+  return;
+});
 
 /**
  * Open endpoints for SHL and content access
  */
 /** Request SHL manifest */
 router.post('/shl/:shlId', async (context) => {
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    entity: { detail: {
+      action: `Manifest request for shl '${context.params.shlId}'`,
+      shl: context.params.shlId
+    }}
+  };
   const config: types.HealthLinkManifestRequest = await context.request.body({ type: 'json' }).value;
   const embeddedLengthMax = Math.min(env.EMBEDDED_LENGTH_MAX, config.embeddedLengthMax !== undefined ? config.embeddedLengthMax : Infinity);
   if (!config.recipient) {
-    context.throw(400, "Missing recipient in request body");
+    error(context, logMessage, 400, "Missing recipient in request body");
     return;
   }
 
   let shl: types.HealthLink | undefined = db.DbLinks.getShlInternal(context.params.shlId);
-  
-  if (shl === undefined) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
-    return;
-  }
-
-  if (!shl?.active) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+  if (shl === undefined || !shl?.active) {
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
-    context.throw(404, "SHL is expired");
+    error(context, logMessage, 404, "SHL is expired");
     return;
   }
   if (shl.config.passcode && !("passcode" in config)) {
-    context.throw(401, "Passcode required", {remainingAttempts: shl.passcodeFailuresRemaining});
+    error(context, logMessage, 401, "Passcode required", {
+      details: {
+        remainingAttempts: shl.passcodeFailuresRemaining
+      }
+    });
     return;
   }
   if (shl.config.passcode && shl.config.passcode !== config.passcode) {
     db.DbLinks.recordPasscodeFailure(shl.id);
-    context.throw(401, "Incorrect passcode", {remainingAttempts: shl.passcodeFailuresRemaining - 1});
+    error(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts: shl.passcodeFailuresRemaining - 1 }});
     return;
   }
 
@@ -95,16 +173,17 @@ router.post('/shl/:shlId', async (context) => {
 });
 /** Request SHL file from manifest */
 router.get('/shl/:shlId/file/:fileIndex', (context) => {
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    entity: { detail: {
+      action: `Get file '${context.params.fileIndex}' for shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+      file: context.params.fileIndex
+    } }
+  };
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
-  if (!ticket) {
-    console.log('Cannot request SHL without a valid ticket');
-    context.throw(401, "Unauthorized");
-    return;
-  }
-
-  if (ticket.shlId !== context.params.shlId) {
-    console.log('Ticket is not valid for ' + context.params.shlId);
-    context.throw(401, "Unauthorized");
+  if (!ticket || ticket.shlId !== context.params.shlId) {
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
 
@@ -115,22 +194,24 @@ router.get('/shl/:shlId/file/:fileIndex', (context) => {
 });
 /** Request SHL endpoint from manifest */
 router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    entity: { detail: {
+      action: `Get endpoint '${context.params.endpoinId}' for shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+      file: context.params.endpointId
+    } }
+  };
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
-  if (!ticket) {
+  if (!ticket || ticket.shlId !== context.params.shlId) {
     console.log('Cannot request SHL without a valid ticket');
-    context.throw(401, "Unauthorized");
-    return;
-  }
-
-  if (ticket.shlId !== context.params.shlId) {
-    console.log('Ticket is not valid for ' + context.params.shlId);
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
 
   const endpoint = await db.DbLinks.getEndpoint(context.params.shlId, context.params.endpointId);
   if (!endpoint) {
-    context.throw(404, "Endpoint not found.");
+    error(context, logMessage, 404, "Endpoint not found.");
     return;
   }
   context.response.headers.set('content-type', 'application/jose');
@@ -149,9 +230,16 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
 });
 /** Check if SHL is active */
 router.get('/shl/:shlId/active', (context) => {
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    entity: { detail: {
+      action: `Read active status for shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+    }}
+  };
   const shl = db.DbLinks.getShlInternal(context.params.shlId);
   if (!shl) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const isActive = (shl && shl.active);
@@ -160,21 +248,21 @@ router.get('/shl/:shlId/active', (context) => {
   context.response.headers.set('content-type', 'application/json');
   return;
 });
-/** [Deprecated] Demo iis endpoint for HIMSS 2024 */
-router.post('/iis', async(context) => {
-  const content = await context.request.body({ type: 'json' }).value;
-  const response = await fetch('http://35.160.125.146:8039/fhir/Patient/', {
-    method: 'POST',
-    headers: content.headers,
-    body: JSON.stringify(content)
-  });
-  if (!response.ok) {
-    throw new Error('Unable to fetch IIS immunization data');
-  }
-  const body = await response.json();
-  context.response.body = body;
-  return;
-});
+/** [Deprecated] Demo iis proxy endpoint for HIMSS 2024 */
+// router.post('/iis', async(context) => {
+//   const content = await context.request.body({ type: 'json' }).value;
+//   const response = await fetch('http://35.160.125.146:8039/fhir/Patient/', {
+//     method: 'POST',
+//     headers: content.headers,
+//     body: JSON.stringify(content)
+//   });
+//   if (!response.ok) {
+//     throw new Error('Unable to fetch IIS immunization data');
+//   }
+//   const body = await response.json();
+//   context.response.body = body;
+//   return;
+// });
 
 /**
  * Middleware for JWT validation in front of below routes if necessary
@@ -191,9 +279,15 @@ router.use(authMiddleware);
 /** Simple auth check endpoint to open auth middleware check to external services */
 router.post('/authcheck', async (context: oak.Context) => {
   const userId = context.state.auth.sub;
-  console.log("Authcheck: " + userId);
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    subject: userId,
+    entity: { detail: {
+      action: `Auth check for user '${userId}'`,
+    }}
+  };
   if (!userId) {
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
   context.response.headers.set('Content-Type', 'application/json');
@@ -214,8 +308,24 @@ router.post('/user', async (context: oak.Context) => {
 });
 /** Create SHL */
 router.post('/shl', async (context) => {
+  const userId = context.state.auth.sub;
   const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
-  const newLink = db.DbLinks.create(config);
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    subject: userId,
+    agent: { who: userId },
+    entity: { detail: {
+      action: `Create shl`,
+      config: JSON.stringify(config),
+    }}
+  };
+  let newLink: types.HealthLinkFull | undefined = undefined;
+  try {
+    newLink = db.DbLinks.create(config, userId);
+  } catch (e) {
+    error(context, logMessage, 500, "Failed to create SHL");
+    return;
+  }
   console.log("Created link " + newLink.id);
   const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
   const shlinkBare = `shlink:/${encodedPayload}`;
@@ -227,13 +337,24 @@ router.post('/shl', async (context) => {
 router.put('/shl/:shlId', async (context) => {
   const userId = context.state.auth.sub;
   const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
+  const logMessage: types.LogMessageSimple = {
+    action: "update",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      action: `Update config for shl '${context.params.shlId}'`,
+      config: JSON.stringify(config),
+    }}
+  };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   if (!shl) {
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
   shl.config.exp = config.exp ?? shl.config.exp;
@@ -248,35 +369,58 @@ router.put('/shl/:shlId', async (context) => {
 /** Deactivate SHL */
 router.delete('/shl/:shlId', async (context) => {
   const userId = context.state.auth.sub;
+  const logMessage: types.LogMessageSimple = {
+    action: "delete",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      action: `Delete shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+    }}
+  };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   try {
     const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
     if (!shl) {
-      context.throw(401, "Unauthorized");
+      error(context, logMessage, 401, "Unauthorized");
       return;
     }
     const deactivated = db.DbLinks.deactivate(shl);
     if (!deactivated) {
-      context.throw(500, "Failed to delete SHL");
+      error(context, logMessage, 500, "Failed to deactivate SHL");
       return;
     }
     const updatedShlList = db.DbLinks.getUserShls(userId)!;
     context.response.headers.set('content-type', 'application/json');
     context.response.body = updatedShlList;
   } catch {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    return;
   }
   return;
 });
 /** Reactivate SHL */
 router.put('/shl/:shlId/reactivate', async (context) => {
   const userId = context.state.auth.sub;
+  const logMessage: types.LogMessageSimple = {
+    action: "update",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      shl: context.params.shlId,
+      action: `Reactivate shl '${context.params.shlId}'`
+    } }
+  };
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
   const success = db.DbLinks.reactivate(shl)!;
@@ -292,24 +436,35 @@ router.post('/shl/:shlId/file', async (context) => {
     type: 'bytes',
     limit: fileSizeMax
   });
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      action: `Add file to shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+    }}
+  };
 
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
 
   let contentLength = context.request.headers.get('content-length');
   if (contentLength === null) {
-    context.throw(400, "Missing content length");
+    error(context, logMessage, 400, "Missing content length");
     return;
   }
   if (Number(contentLength) > fileSizeMax) {
-    context.throw(413, "Size limit exceeded");
+    error(context, logMessage, 413, "File size limit exceeded", {details: { limit: fileSizeMax }});
     return;
   }
 
@@ -328,19 +483,31 @@ router.post('/shl/:shlId/file', async (context) => {
 router.delete('/shl/:shlId/file', async (context) => {
   const userId = context.state.auth.sub;
   const currentFileHash = await context.request.body({type: 'text'}).value;
+  const logMessage: types.LogMessageSimple = {
+    action: "delete",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      action: `Delete file from shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+      file: currentFileHash
+    }}
+  };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
   
   const deleted = db.DbLinks.deleteFile(shl.id, currentFileHash);
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.throw(500, "Failed to delete file");
+    error(context, logMessage, 500, "Failed to delete file");
     return;
   }
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
@@ -352,29 +519,55 @@ router.delete('/shl/:shlId/file', async (context) => {
 router.post('/shl/:shlId/endpoint', async (context) => {
   const userId = context.state.auth.sub;
   const config: types.HealthLinkEndpoint = await context.request.body({ type: 'json' }).value;
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      action: `Add endpoint to shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+    }}
+  };
 
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    context.throw(404, "SHL does not exist or has been deactivated.");
+    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    context.throw(401, "Unauthorized");
+    error(context, logMessage, 401, "Unauthorized");
     return;
   }
 
   const added = await db.DbLinks.addEndpoint(shl.id, config);
-  console.log("Added", added)
+  console.log("Added", added);
   const updatedShl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   context.response.headers.set('content-type', 'application/json');
   context.response.body = prepareShlForReturn(updatedShl);
   return;
 });
-/** Subscribe to SHLs related to a management token */
+/** Subscribe to SHLs related to their management tokens */
 router.post('/subscribe', async (context) => {
   const userId = context.state.auth.sub;
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    subject: userId,
+    agent: {
+      who: userId
+    },
+    entity: { detail: {
+      action: `Subscribe to shl`,
+      shl: context.request.url.toString()
+    }}
+  };
   const shlSet: { shlId: string; managementToken: string }[] = await context.request.body({ type: 'json' }).value;
-  const managedLinks = shlSet.map((req) => db.DbLinks.getManagedShl(req.shlId, req.managementToken));
+  const managedLinks = shlSet.map((req) => db.DbLinks.getManagedShl(req.shlId, req.managementToken)).filter((l) => l !== undefined);
+  if (managedLinks.length === 0) {
+    error(context, logMessage, 401, "Unauthorized");
+    return;
+  }
 
   const ticket = randomStringWithEntropy(32, 'subscription-ticket-');
   subscriptionTickets.set(
@@ -391,8 +584,16 @@ router.post('/subscribe', async (context) => {
 /** Get subscribed SHLs for a ticket */
 router.get('/subscribe/:ticket', (context) => {
   const validForSet = subscriptionTickets.get(context.params.ticket);
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    entity: { detail: {
+      action: `Access subscription`,
+      shl: context.request.url.toString()
+    }}
+  };
   if (!validForSet) {
-    throw 'Invalid ticket for SSE subscription';
+    error(context, logMessage, 401, "Invalid ticket for SSE subscription");
+    return;
   }
 
   const target = context.sendEvents();
@@ -431,7 +632,12 @@ router.post('/register', (context) => {
 
 /** JWT validation middleware */
 async function authMiddleware(context: oak.Context, next: () => Promise<unknown>) {
-
+  const logMessage: types.LogMessageSimple = {
+    action: "login",
+    entity: { detail: {
+      action: `Verify request credentials`,
+    }}
+  };
   // TODO: temp - remove in favor of jwt
   // Adapter to handle user id in body
   try {
@@ -450,13 +656,13 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   const token = context.request.headers.get('Authorization');
   if (!token) {
-    context.throw(400, "Missing token in request header");
+    error(context, logMessage, 401, "Missing token in request header");
     return;
   }
 
   const tokenValue = token.split(' ')[1];
   if (!tokenValue) {
-    context.throw(400, "Missing token in request header");
+    error(context, logMessage, 401, "Missing token in request header");
     return;
   }
 
@@ -465,17 +671,16 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
   if (db.DbLinks.managementTokenExists(tokenValue)) {
     console.log("Trying management token: " + tokenValue);
     let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
-    console.log("MT user: " + JSON.stringify(mtUser));
     if (mtUser) {
-      context.state.auth = { sub: db.DbLinks.getManagementTokenUserInternal(tokenValue) };
-      console.log("User: " + context.state.auth.sub);
+      context.state.auth = { sub: mtUser };
+      console.log("User from management token: " + mtUser);
       return next();
     }
   }
   // temp
   
   if (!env.JWKS_URL) {
-    context.throw(401, "Invalid token");
+    error(context, logMessage, 401, "Invalid token");
     return;
   }
 
@@ -491,8 +696,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     return next();
   
   } catch (error) {
-    console.log(JSON.stringify(error));
-    context.throw(401, "Invalid token");
+    error(context, logMessage, 401, "Invalid token");
     return;
   }
 }

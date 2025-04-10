@@ -16,6 +16,21 @@ app.use(async (ctx, next) => {
 
 app.use(oakCors());
 
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err) {
+    ctx.response.status = err.status || 500;
+
+    ctx.response.body = {
+      message: err.message || 'Internal Server Error',
+      details: err.details || null,
+    };
+
+    ctx.response.type = "application/json";
+  }
+});
+
 const appRouter = new Router()
   .get('/', (context) => {
     context.response.body = 'Index';
