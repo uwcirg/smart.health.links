@@ -1,8 +1,6 @@
 services:
   server:
-    build: ./server
-    env_file:
-      - server/.env
+    build: .
     ports:
       # allow override of published port
       - "127.0.0.1:${EXTERNAL_PORT:-9000}:8000"
