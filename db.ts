@@ -22,8 +22,8 @@ export async function initializeDb() {
     }
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) {
-      const file = await Deno.open(dir + '/db/vaxx.db', { create: true, write: true });
-      await file.close();
+      // const file = await Deno.open(dir + '/db/vaxx.db', { create: true, write: true });
+      // await file.close();
     } else {
       throw err;
     }
