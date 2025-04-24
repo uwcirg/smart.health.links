@@ -8,15 +8,7 @@ const { DB } = sqlite;
 
 const dir = env.DIR || '.';
 
-const db = new DB(dir + '/db/vaxx.db');
-const schema = await Deno.readTextFile('./schema.sql');
-schema.split(/\n\n/).forEach((q) => {
-  try {
-    db.execute(q);
-  } catch (e) {
-    if (!q.match('ok_to_fail')) throw e;
-  }
-});
+let db = await initializeDb();
 
 export async function initializeDb() {
   try {
@@ -30,8 +22,8 @@ export async function initializeDb() {
     }
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) {
-      // const file = await Deno.open(dir + '/db/vaxx.db', { create: true, write: true });
-      // await file.close();
+      const file = await Deno.open(dir + '/db/vaxx.db', { create: true, write: true });
+      await file.close();
     } else {
       throw err;
     }
