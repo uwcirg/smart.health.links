@@ -4,6 +4,7 @@ WORKDIR /app
 USER root
 RUN apt-get update && \
     apt-get install -y sqlite3
+USER deno
 COPY  --chown=deno deps.ts .
 RUN deno cache deps.ts
 COPY --chown=deno . .
