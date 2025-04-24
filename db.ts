@@ -8,7 +8,15 @@ const { DB } = sqlite;
 
 const dir = env.DIR || '.';
 
-let db = await initializeDb();
+const db = new DB(dir + '/db/vaxx.db');
+const schema = await Deno.readTextFile('./schema.sql');
+schema.split(/\n\n/).forEach((q) => {
+  try {
+    db.execute(q);
+  } catch (e) {
+    if (!q.match('ok_to_fail')) throw e;
+  }
+});
 
 export async function initializeDb() {
   try {
