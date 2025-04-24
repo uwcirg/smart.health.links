@@ -1,11 +1,13 @@
 services:
   server:
     build: .
+    user: root
     ports:
       # allow override of published port
       - "127.0.0.1:${EXTERNAL_PORT:-9000}:8888"
     volumes:
       - shl-server-data:/app/db
+    command: sh -c "chown -R deno:deno /app/db && exec su deno -c 'deno run --allow-all server.ts'"
 
 volumes:
   shl-server-data: {}
