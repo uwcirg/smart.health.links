@@ -47,7 +47,7 @@ app.addEventListener('error', (evt) => {
   console.log('App', evt.type, '>', evt.message, '>', evt.error, '<<');
 });
 
-const port = parseInt(Deno.env.get('PORT') || '8888');
+const port = parseInt(Deno.env.get('PORT') || '8000');
 console.info('CORS-enabled web server listening on port ' + port);
 app.listen({ port });
 export default app;
