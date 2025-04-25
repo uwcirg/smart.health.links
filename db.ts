@@ -14,7 +14,7 @@ export async function initializeDb() {
   try {
     await fs.ensureDir(dir + '/db');
     await Deno.stat(dir + '/db/vaxx.db');
-    console.log('File already exists');
+    console.log('DB file already exists');
     if (Deno.env.get('TEST')) {
       // clear the db for testing
       const file = await Deno.open(dir + '/db/vaxx.db', { create: true, write: true, truncate: true });
@@ -22,6 +22,7 @@ export async function initializeDb() {
     }
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) {
+      console.log('Creating DB file');
       const file = await Deno.open(dir + '/db/vaxx.db', { create: true, write: true });
       await file.close();
     } else {
