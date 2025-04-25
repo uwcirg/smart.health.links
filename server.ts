@@ -2,6 +2,7 @@ import { oak, cors } from './deps.ts';
 import { shlApiRouter } from './routers/api.ts';
 const { Application, Router } = oak;
 const { oakCors } = cors;
+import env from './config.ts';
 
 const app = new Application({ logErrors: false });
 
@@ -47,7 +48,7 @@ app.addEventListener('error', (evt) => {
   console.log('App', evt.type, '>', evt.message, '>', evt.error, '<<');
 });
 
-const port = parseInt(Deno.env.get('PORT') || '8000');
+const port = env.PORT;
 console.info('CORS-enabled web server listening on port ' + port);
 app.listen({ port });
 export default app;

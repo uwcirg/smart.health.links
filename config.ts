@@ -8,20 +8,23 @@ interface Config {
   DIR?: string;
 };
 
+const port = Number(Deno.env.get("PORT") || 8888);
+const test_port = Number(Deno.env.get("TEST_PORT") || 9999);
+
 const defaultEnv: Config = {
-  PUBLIC_URL: 'http://localhost:8000',
+  PUBLIC_URL: `http://localhost:${port}`,
   FILE_SIZE_MAX: 1024 * 1024 * 100, // 100 MB
   EMBEDDED_LENGTH_MAX: 10_000, // 10 KB
   APP_VERSION_STRING: "",
-  PORT: 8000,
+  PORT: port,
   JWKS_URL: "",
   DIR: ".",
 };
 
 const testEnv: Config = {
   ...defaultEnv,
-  PUBLIC_URL: 'http://localhost:8888',
-  PORT: 8888,
+  PUBLIC_URL: `http://localhost:${test_port}`,
+  PORT: test_port,
   DIR: "tests",
 }
 
