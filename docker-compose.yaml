@@ -6,10 +6,6 @@ services:
       - "127.0.0.1:${EXTERNAL_PORT:-9000}:8888"
     volumes:
       - shl-server-data:/app/db
-    user: root
-    # command: sh -c "chown -R deno:deno /app/db && exec su deno -c 'deno run --allow-all server.ts'"
-    command : >
-      sh -c "ls -ld /app/db && ls -l /app/db && whoami && sleep 99999"
 
 volumes:
   shl-server-data: {}
