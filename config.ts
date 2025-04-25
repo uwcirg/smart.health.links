@@ -8,8 +8,8 @@ interface Config {
   DIR?: string;
 };
 
-const port = Number(Deno.env.get("PORT") || 8888);
-const test_port = Number(Deno.env.get("TEST_PORT") || 9999);
+const port = Number(Deno.env.get("PORT") || 8000);
+const test_port = Number(Deno.env.get("TEST_PORT") || 9000);
 
 const defaultEnv: Config = {
   PUBLIC_URL: `http://localhost:${port}`,
