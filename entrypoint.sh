@@ -10,5 +10,8 @@ if [ -d /app/db ]; then
   fi
 fi
 
+echo ">> Running as: $(whoami)"
+echo ">> Command: $@"
+
 # Drop privileges to deno and run your command
 exec gosu deno "$@"
