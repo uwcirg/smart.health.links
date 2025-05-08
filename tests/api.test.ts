@@ -113,7 +113,7 @@ async function addJSONFile(userId:string) {
   assertions.assertEquals(shlFileResponse.status, 200);
 }
 
-async function queryManifest(id: string, body: types.HealthLinkManifestRequest) {
+async function getManifest(id: string, body: types.HealthLinkManifestRequest) {
   const manifestResponse = await fetch(`${env.PUBLIC_URL}/api/shl/${id}`, {
     method: 'POST',
     headers: {
@@ -194,7 +194,7 @@ Deno.test({
 
     let manifestJson: any;
     await t.step('Obtain manifest from SHL server', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: '1234', recipient: 'Test SHL Client' }
       );
@@ -236,7 +236,7 @@ Deno.test({
     const shl = getUserSHL(userId);
 
     await t.step('Get manifest', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: passcode, recipient: 'Test SHL Client' }
       );
@@ -248,7 +248,7 @@ Deno.test({
     });
 
     await t.step('Request manifest with wrong passcode', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: 'wrong', recipient: 'Test SHL Client' }
       );
@@ -258,14 +258,14 @@ Deno.test({
       assertions.assert((manifestContent).details.remainingAttempts > 0);
     });
     await t.step('Request manifest with missing passcode', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { recipient: 'Test SHL Client' }
       );
       assertions.assertEquals(manifestResponse.status, 401);
     });
     await t.step('Request manifest with missing recipient', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         // @ts-ignore
         { passcode: passcode }
@@ -273,7 +273,7 @@ Deno.test({
       assertions.assertEquals(manifestResponse.status, 400);
     });
     await t.step('Request manifest for non-existent SHL id', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         'non-existent-shl-id',
         { passcode: passcode, recipient: 'Test SHL Client' }
       );
@@ -334,14 +334,14 @@ Deno.test({
       assertions.assertEquals(putResponse.status, 200);
     });
     await t.step('Fetch manifest using old passcode', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: ogPasscode, recipient: 'Test SHL Client' }
       );
       assertions.assertEquals(manifestResponse.status, 401);
     });
     await t.step('Fetch manifest using new passcode', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: newPasscode, recipient: 'Test SHL Client' }
       );
@@ -362,7 +362,7 @@ Deno.test({
       assertions.assertEquals(putResponse.status, 200);
     });
     await t.step('Fetch expired SHL manifest', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: newPasscode, recipient: 'Test SHL Client' }
       );
@@ -497,7 +497,7 @@ Deno.test({
     let manifestJson: types.SHLinkManifest;
 
     await t.step('Get SHL manifest', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: '1234', recipient: 'Test SHL Client' }
       );
@@ -519,7 +519,7 @@ Deno.test({
 
     await t.step('Add JSON file to SHL', async function () {
       await addJSONFile(userId);
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: '1234', recipient: 'Test SHL Client' }
       );
@@ -529,7 +529,7 @@ Deno.test({
       shl = getUserSHL(userId);
     });
     await t.step('Get SHL manifest (2 files)', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: '1234', recipient: 'Test SHL Client' }
       );
@@ -564,7 +564,7 @@ Deno.test({
     });
 
     await t.step('Get SHL manifest (1 files)', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: '1234', recipient: 'Test SHL Client' }
       );
@@ -605,7 +605,7 @@ Deno.test({
     });
 
     await t.step('Get SHL manifest (no files)', async function () {
-      const manifestResponse = await queryManifest(
+      const manifestResponse = await getManifest(
         shl!.id,
         { passcode: '1234', recipient: 'Test SHL Client' }
       );
