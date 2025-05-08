@@ -555,9 +555,12 @@ export const DbLinks = {
     });
   },
   recordPasscodeFailure(shlId: string) {
-    const q = db.prepareQuery(
-      `update shlink_access set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
-    );
-    q.execute([shlId]);
+    // TODO: add entry to shlink_access_log for IP address and time
+    // add logic around passcode failures in the last N minutes and a limit of attempts within that time.
+
+    // const q = db.prepareQuery(
+    //   `update shlink_access set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
+    // );
+    // q.execute([shlId]);
   },
 };

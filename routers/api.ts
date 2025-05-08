@@ -138,7 +138,9 @@ router.post('/shl/:shlId', async (context) => {
     return;
   }
   if (shl.config.passcode && shl.config.passcode !== config.passcode) {
-    db.DbLinks.recordPasscodeFailure(shl.id);
+    if (shl.config.passcode.length > 0) {
+      db.DbLinks.recordPasscodeFailure(shl.id);
+    }
     error(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts: shl.passcodeFailuresRemaining - 1 }});
     return;
   }
