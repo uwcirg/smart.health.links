@@ -6,6 +6,8 @@ services:
       - "127.0.0.1:${EXTERNAL_PORT:-9000}:8000"
     volumes:
       - shl-server-data:/app/db
+    env_file:
+      - server.env
 
 volumes:
   shl-server-data: {}
