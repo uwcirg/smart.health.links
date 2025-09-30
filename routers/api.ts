@@ -305,7 +305,7 @@ router.post('/user', async (context: oak.Context) => {
     context.response.body = [];
     return;
   }
-  context.response.body = shls;
+  context.response.body = shls.map(prepareShlForReturn);
   return;
 });
 /** Create SHL */
