@@ -1,9 +1,63 @@
-export interface HealthLinkFile {
-  contentType: string;
-  content: Uint8Array;
+// Interface for creating or updating an SHL
+// aside from userId, represents the user-defined SHL fields
+export interface HealthLinkConfig {
+  passcode?: string;
+  exp?: number;
+  label?: string;
 }
 
-export interface HealthLinkEndpoint {
+// Internal SHL representation including internal access criteria
+export interface HealthLink {
+  config: HealthLinkConfig;
+  active: boolean;
+  id: string;
+  managementToken: string;
+  passcodeFailuresRemaining: number;
+}
+
+// Public SHL content exposed via "/shlink:" url
+export interface SHLDecoded {
+  id: string;
+  url: string;
+  flag: string;
+  key: string & { length: 43 };
+  exp?: number;
+  label?: string;
+  v?: number;
+}
+
+// File properties (no content)
+export interface FileSummary {
+  label?: string;
+  added: string;
+  contentType: string;
+  contentHash: string;
+}
+
+// All data relating to an SHL, including public fields, internal access criteria, and files
+export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFailuresRemaining' | 'active'> {
+  files: FileSummary[];
+}
+
+// HealthLinkFull without config, and with passcode
+export interface HealthLinkFullFlat extends Omit<HealthLinkFull, 'config'>, Pick<HealthLinkConfig, 'passcode'> {}
+
+// Entry in SHL manifest, can be file or endpoint
+export interface SHLinkManifestEntry {
+  contentType: 'application/fhir+json' | 'application/smart-health-card' | 'application/smart-api-access';
+  embedded?: string;
+  location: string;
+}
+
+// HealthLink file interface (add and retrieve for manifest)
+export interface HealthLinkFileContent {
+  contentType: string;
+  hash?: string;
+  content: Uint8Array<ArrayBuffer>;
+}
+
+// HealthLink endpoint interface (add and retrieve for manifest)
+export interface HealthLinkEndpointContent {
   id?: string;
   refreshTime?: string;
   endpointUrl: string;
@@ -21,71 +75,23 @@ export interface HealthLinkEndpoint {
   };
 }
 
-export interface HealthLinkConfig {
-  userId?: string;
-  passcode?: string;
-  exp?: number;
-  label?: string;
+// SHL Manifest
+export interface SHLinkManifest {
+  files: SHLinkManifestEntry[];
 }
 
-export interface HealthLink {
-  config: HealthLinkConfig;
-  active: boolean;
-  id: string;
-  managementToken: string;
-  passcodeFailuresRemaining: number;
-}
-
-export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFailuresRemaining' | 'active'> {
-  files: FileSummary[];
-}
-
-export interface HealthLinkFullReturn extends Omit<HealthLinkFull, 'config'> {
-  config?: HealthLinkConfig;
-}
-
+// Input type for retrieving SHL manifest
 export interface HealthLinkManifestRequest {
   recipient: string;
   passcode?: string;
   embeddedLengthMax?: number;
 }
 
-export interface FileSummary {
-  label?: string;
-  added: string;
-  contentType: string;
-  contentHash: string;
-}
-
-export interface SHLinkManifestFile {
-  contentType: 'application/fhir+json' | 'application/smart-health-card' | 'application/smart-api-access';
-  location: string;
-}
-
-export interface SHLinkManifest {
-  files: SHLinkManifestFile[];
-}
-
-export interface SHLinkAddFileRequest {
-  id: string;
-  files: HealthLinkFile[];
-}
-
-export interface SHLDecoded {
-  id: string;
-  url: string;
-  flag: string;
-  key: string & { length: 43 };
-  exp?: number;
-  label?: string;
-  v?: number;
-}
-
 /** Database table result types */
 export interface cas_item {
-  hash?: string;
-  content?: Uint8Array;
-  content_type?: string;
+  content_hash: string;
+  content: Uint8Array<ArrayBuffer>;
+  content_type: string;
 }
 export interface user {
   id?: string;

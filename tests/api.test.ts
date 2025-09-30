@@ -10,12 +10,12 @@ await app;
 
 const usershls: Record<string, types.HealthLinkFull> = {};
 
-async function initializeTest(config: types.HealthLinkConfig = {}) {
-  assertions.assertExists(config.userId);
+async function initializeTest(userId: string, config: types.HealthLinkConfig = {}) {
+  assertions.assertExists(userId);
   await createSHL(config);
-  await updateUserShls(config.userId);
-  await addSHCFile(config.userId);
-  await updateUserShls(config.userId);
+  await updateUserShls(userId);
+  await addSHCFile(userId);
+  await updateUserShls(userId);
 }
 
 async function createSHL(config: types.HealthLinkConfig = {}) {
@@ -161,7 +161,7 @@ Deno.test({
   name: 'App supports e2e flow',
   async fn(t) {
     const userId = randomStringWithEntropy(32);
-    await initializeTest({ userId: userId, passcode: '1234' });
+    await initializeTest(userId, { passcode: '1234' });
     let shl = usershls[userId];
     assertions.assertExists(shl);
 
@@ -232,7 +232,7 @@ Deno.test({
   async fn(t) {
     const userId = randomStringWithEntropy(32);
     let passcode = '1234';
-    await initializeTest({ userId: userId, passcode: passcode });
+    await initializeTest(userId, { passcode: passcode });
     const shl = getUserSHL(userId);
 
     await t.step('Get manifest', async function () {
@@ -292,8 +292,7 @@ Deno.test({
     const expiration = new Date().getTime() / 1000 + (60 * 60 * 24); // one day in the future
     const label = 'Test SHL';
 
-    await initializeTest({
-      userId: userId,
+    await initializeTest(userId, {
       passcode: ogPasscode,
       exp: expiration,
       label: label,
@@ -391,7 +390,7 @@ Deno.test({
   name: 'Active Status Interactions',
   async fn(t) {
     const userId = randomStringWithEntropy(32);
-    await initializeTest({ userId: userId, passcode: '1234' });
+    await initializeTest(userId, { passcode: '1234' });
     const shl = getUserSHL(userId);
     
     await t.step('Check shl active status (active)', async function () {
@@ -492,7 +491,7 @@ Deno.test({
   name: 'SHL File Interactions',
   async fn(t) {
     const userId = randomStringWithEntropy(32);
-    await initializeTest({ userId: userId, passcode: '1234' });
+    await initializeTest(userId, { passcode: '1234' });
     let shl = getUserSHL(userId);
     let manifestJson: types.SHLinkManifest;
 
@@ -724,7 +723,7 @@ Deno.test({
     const accessConfig =  JSON.parse(await Deno.readTextFile("tests/smart-api-config.json"));
 
     const tokenResponse = { ...accessConfig.tokenResponse, referesh_token: undefined };
-    const endpoint: types.HealthLinkEndpoint = {
+    const endpoint: types.HealthLinkEndpointContent = {
       config: {
         clientId: accessConfig.clientId,
         clientSecret: accessConfig.clientSecret,

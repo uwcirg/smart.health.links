@@ -41,7 +41,8 @@ export async function initializeDb() {
   return db;
 }
 
-async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
+async function updateAccessToken(endpoint: types.HealthLinkEndpointContent) {
+  let updatedEndpoint = endpoint;
   const accessTokenRequest = await fetch(endpoint.config.tokenEndpoint, {
     method: 'POST',
     headers: {
@@ -51,15 +52,15 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpoint) {
     body: queryString.stringify({ grant_type: 'refresh_token', refresh_token: endpoint.config.refreshToken }),
   });
   const accessTokenResponse = await accessTokenRequest.json();
-
-
-  endpoint.accessTokenResponse = accessTokenResponse;
-  if (endpoint?.accessTokenResponse?.refresh_token) {
-    endpoint.config.refreshToken = endpoint.accessTokenResponse.refresh_token;
-    delete endpoint.accessTokenResponse.refresh_token;
+  
+  updatedEndpoint.accessTokenResponse = accessTokenResponse;
+  if (updatedEndpoint?.accessTokenResponse?.refresh_token) {
+    updatedEndpoint.config.refreshToken = updatedEndpoint.accessTokenResponse.refresh_token;
+    delete updatedEndpoint.accessTokenResponse.refresh_token;
   }
   const TOKEN_LIFETIME_SECONDS = 300;
-  endpoint.refreshTime = new Date(new Date().getTime() + TOKEN_LIFETIME_SECONDS * 1000).toISOString();
+  updatedEndpoint.refreshTime = new Date(new Date().getTime() + TOKEN_LIFETIME_SECONDS * 1000).toISOString();
+  return updatedEndpoint;
 }
 
 export const DbLinks = {
@@ -305,14 +306,13 @@ export const DbLinks = {
         flag: row.flag as string,
         label: row.label as string,
         v: row.version as number,
-        files: this.getFiles(row.id),
+        files: this.getSHLFileSummaries(row.id),
         config: {
           exp: row.config_exp as number,
           passcode: row.config_passcode as string
         },
         managementToken: row.management_token as string
       };
-      userShl.files = this.getFiles(userShl.id);
       return userShl;
     } catch (e) {
       return undefined;
@@ -351,11 +351,11 @@ export const DbLinks = {
         } as types.HealthLinkFull
       });
     for (const shl of userPubShls) {
-      shl.files = this.getFiles(shl.id);
+      shl.files = this.getSHLFileSummaries(shl.id);
     }
     return userPubShls;
   },
-  async addFile(linkId: string, file: types.HealthLinkFile) {
+  async addFile(linkId: string, file: types.HealthLinkFileContent): Promise<string | undefined> {
     const hash = await crypto.subtle.digest('SHA-256', file.content);
     const hashEncoded = base64url.encode(hash);
     try {
@@ -376,7 +376,7 @@ export const DbLinks = {
       });
     } catch (e) {
       console.error(e);
-      return false;
+      return undefined;
     }
 
     return hashEncoded;
@@ -409,10 +409,10 @@ export const DbLinks = {
 
     return true;
   },
-  async addEndpoint(linkId: string, endpoint: types.HealthLinkEndpoint): Promise<string> {
+  async addEndpoint(linkId: string, endpoint: types.HealthLinkEndpointContent): Promise<string> {
     const id = randomStringWithEntropy(32);
 
-    await updateAccessToken(endpoint);
+    let updatedEndpoint = await updateAccessToken(endpoint);
     db.query(
       `insert into shlink_endpoint(
           id, shlink, endpoint_url,
@@ -424,53 +424,33 @@ export const DbLinks = {
       {
         id,
         linkId,
-        endpointUrl: endpoint.endpointUrl,
-        key: endpoint.config.key,
-        clientId: endpoint.config.clientId,
-        clientSecret: endpoint.config.clientSecret,
-        tokenEndpoint: endpoint.config.tokenEndpoint,
-        refreshTime: endpoint.refreshTime,
-        refreshToken: endpoint.config.refreshToken,
-        accessTokenResponse: JSON.stringify(endpoint.accessTokenResponse),
+        endpointUrl: updatedEndpoint.endpointUrl,
+        key: updatedEndpoint.config.key,
+        clientId: updatedEndpoint.config.clientId,
+        clientSecret: updatedEndpoint.config.clientSecret,
+        tokenEndpoint: updatedEndpoint.config.tokenEndpoint,
+        refreshTime: updatedEndpoint.refreshTime,
+        refreshToken: updatedEndpoint.config.refreshToken,
+        accessTokenResponse: JSON.stringify(updatedEndpoint.accessTokenResponse),
       },
     );
 
     return id;
   },
-  async saveEndpoint(endpoint: types.HealthLinkEndpoint): Promise<boolean> {
+  updateEndpoint(endpoint: types.HealthLinkEndpointContent): types.HealthLinkEndpointContent {
     db.query(`update shlink_endpoint set config_refresh_token=?, refresh_time=?, access_token_response=? where id=?`, [
       endpoint.config.refreshToken,
       endpoint.refreshTime,
       JSON.stringify(endpoint.accessTokenResponse),
       endpoint.id,
     ]);
-    return await true;
+    return endpoint;
   },
-  getManifestFiles(linkId: string, embeddedLengthMax?: number) {
-    const files = db.queryEntries<{ content_type: string; content_hash: string; content?: Uint8Array; }>(
-      `select
-      content_type,
-      content_hash,
-      (case when length(cas_item.content) <= ${embeddedLengthMax} then cas_item.content else NULL end) as content
-      from shlink_file
-      join cas_item on shlink_file.content_hash=cas_item.hash
-      where shlink=?`,
-      [linkId],
-    );
-    return files.map((r) => ({
-      contentType: r.content_type as types.SHLinkManifestFile['contentType'],
-      hash: r.content_hash,
-      content: r.content,
-    }));
+  getManifestEndpointIds(linkId: string): Array<string> {
+    let endpointIds = db.queryEntries<{ id: string }>(`select id from shlink_endpoint where shlink=?`, [linkId]).map((r) => r.id);
+    return endpointIds;
   },
-  getManifestEndpoints(linkId: string) {
-    const endpoints = db.queryEntries<{ id: string }>(`select id from shlink_endpoint where shlink=?`, [linkId]);
-    return endpoints.map((e) => ({
-      contentType: 'application/smart-api-access',
-      id: e.id,
-    }));
-  },
-  async getEndpoint(linkId: string, endpointId: string): Promise<types.HealthLinkEndpoint | undefined> {
+  async getEndpointContent(linkId: string, endpointId: string): Promise<types.HealthLinkEndpointContent | undefined> {
     try {
       const endpointRow = db
         .prepareQuery<
@@ -494,8 +474,8 @@ export const DbLinks = {
         from shlink_endpoint where shlink=? and id=?`,
         )
         .oneEntry([linkId, endpointId]);
-
-      const endpoint: types.HealthLinkEndpoint = {
+      
+      let endpoint: types.HealthLinkEndpointContent = {
         id: endpointRow.id,
         endpointUrl: endpointRow.endpoint_url,
         config: {
@@ -510,8 +490,8 @@ export const DbLinks = {
       };
 
       if (new Date(endpoint.refreshTime!).getTime() < new Date().getTime()) {
-        await updateAccessToken(endpoint);
-        await DbLinks.saveEndpoint(endpoint);
+        endpoint = await updateAccessToken(endpoint);
+        DbLinks.updateEndpoint(endpoint);
       }
 
       return endpoint;
@@ -519,20 +499,35 @@ export const DbLinks = {
       return undefined;
     }
   },
-
-  getFile(shlId: string, contentHash: string): types.HealthLinkFile {
-    const fileRow = db.queryEntries<{ content_type: string; content: Uint8Array }>(
-      `select content_type, content from shlink_file f join cas_item c on f.content_hash=c.hash
-      where f.shlink=:shlId and f.content_hash=:contentHash`,
+  getAllFileContentForSHL(linkId: string, embeddedLengthMax: number = Infinity): Array<types.HealthLinkFileContent> {
+    const shlinkFiles = db.queryEntries<types.shlink_file>(
+      `select *
+      from shlink_file
+      where shlink=?`,
+      [linkId],
+    );
+    return shlinkFiles.map((e) => (this.getFileContent(linkId, e.content_hash, embeddedLengthMax)));
+  },
+  getFileContent(shlId: string, contentHash: string, embeddedLengthMax: number = Infinity): types.HealthLinkFileContent {
+    const fileRow = db.queryEntries<types.cas_item>(
+      `select
+      content_type,
+      content_hash,
+      content,
+      (case when length(cas_item.content) <= ${embeddedLengthMax} then cas_item.content else NULL end) as content
+      from shlink_file
+      join cas_item on shlink_file.content_hash=cas_item.hash
+      where shlink_file.shlink=:shlId and shlink_file.content_hash=:contentHash`,
       { shlId, contentHash },
     );
 
     return {
       content: fileRow[0].content,
-      contentType: fileRow[0].content_type,
+      hash: contentHash,
+      contentType: fileRow[0].content_type as types.SHLinkManifestEntry['contentType'],
     };
   },
-  getFiles(shlId: string | undefined): types.FileSummary[] {
+  getSHLFileSummaries(shlId: string | undefined): types.FileSummary[] {
     const files = db.queryEntries(
       `select * from shlink_file where shlink=?`,
       [shlId],

@@ -157,30 +157,30 @@ router.post('/shl/:shlId', async (context) => {
   context.response.headers.set('expires', new Date().toUTCString());
   context.response.headers.set('content-type', 'application/json');
   context.response.body = {
-    files: db.DbLinks.getManifestFiles(shl.id, embeddedLengthMax)
+    files: db.DbLinks.getAllFileContentForSHL(shl.id, embeddedLengthMax)
       .map((f, _i) => ({
         contentType: f.contentType,
         embedded: f.content?.length ? new TextDecoder().decode(f.content) : undefined,
         location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/file/${f.hash}?ticket=${ticket}`,
       }))
       .concat(
-        db.DbLinks.getManifestEndpoints(shl.id).map((e) => ({
+        db.DbLinks.getManifestEndpointIds(shl.id).map((eid) => ({
           contentType: 'application/smart-api-access',
           embedded: undefined,
-          location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/endpoint/${e.id}?ticket=${ticket}`,
+          location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/endpoint/${eid}?ticket=${ticket}`,
         })),
-      ),
+      ) as types.SHLinkManifestEntry[],
   };
   return;
 });
 /** Request SHL file from manifest */
-router.get('/shl/:shlId/file/:fileIndex', (context) => {
+router.get('/shl/:shlId/file/:fileHash', (context) => {
   const logMessage: types.LogMessageSimple = {
     action: "read",
     entity: { detail: {
-      action: `Get file '${context.params.fileIndex}' for shl '${context.params.shlId}'`,
+      action: `Get file '${context.params.fileHash}' for shl '${context.params.shlId}'`,
       shl: context.params.shlId,
-      file: context.params.fileIndex
+      file: context.params.fileHash
     } }
   };
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
@@ -189,7 +189,7 @@ router.get('/shl/:shlId/file/:fileIndex', (context) => {
     return;
   }
 
-  const file = db.DbLinks.getFile(context.params.shlId, context.params.fileIndex);
+  const file = db.DbLinks.getFileContent(context.params.shlId, context.params.fileHash);
   context.response.headers.set('content-type', 'application/jose');
   context.response.body = file.content;
   return;
@@ -211,7 +211,7 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
     return;
   }
 
-  const endpoint = await db.DbLinks.getEndpoint(context.params.shlId, context.params.endpointId);
+  const endpoint = await db.DbLinks.getEndpointContent(context.params.shlId, context.params.endpointId);
   if (!endpoint) {
     error(context, logMessage, 404, "Endpoint not found.");
     return;
@@ -330,7 +330,7 @@ router.post('/shl', async (context) => {
   }
   console.log("Created link " + newLink.id);
   const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
-  const shlinkBare = `shlink:/${encodedPayload}`;
+  const shlinkBare = `shlink:/${encodedPayload}`; // returns encoded payload per spec/IHE testing
   context.response.headers.set('content-type', 'text/plain; charset=utf-8');
   context.response.body = shlinkBare;
   return;
@@ -470,7 +470,7 @@ router.post('/shl/:shlId/file', async (context) => {
     return;
   }
 
-  const newFile = {
+  const newFile: types.HealthLinkFileContent = {
     contentType: context.request.headers.get('content-type')!,
     content: await newFileBody.value,
   };
@@ -520,7 +520,7 @@ router.delete('/shl/:shlId/file', async (context) => {
 /** Add endpoint to SHL */
 router.post('/shl/:shlId/endpoint', async (context) => {
   const userId = context.state.auth.sub;
-  const config: types.HealthLinkEndpoint = await context.request.body({ type: 'json' }).value;
+  const config: types.HealthLinkEndpointContent = await context.request.body({ type: 'json' }).value;
   const logMessage: types.LogMessageSimple = {
     action: "create",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
@@ -703,33 +703,32 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
   }
 }
 
-function prepareMinimalShlForReturn(shl: types.HealthLinkFull) {
-  let flat = {
-    ...shl,
-    ...shl.config,
-  };
-  const keys = [
+type SHLDecodedKey = Extract<keyof types.HealthLinkFull, keyof types.SHLDecoded>;
+
+function prepareMinimalShlForReturn(shl: types.HealthLinkFull): types.SHLDecoded {
+  let preparedSHL = prepareShlForReturn(shl);
+  const keys: SHLDecodedKey[] = [
     "id",
     "url",
     "key",
     "exp",
     "flag",
     "label",
-    "v",
-  ];
+    "v"
+  ] as const satisfies SHLDecodedKey[];
   const subset: types.SHLDecoded = Object.fromEntries(
-    Object.entries(flat).filter(([key]) => keys.includes(key))
-  ) as unknown as types.SHLDecoded;
+    keys.map((key) => [key, preparedSHL[key]])
+  ) as Pick<types.HealthLinkFull, SHLDecodedKey>; // We know the result is of this type, not the generic fromEntries return type of Record<string, unknown>.
   return subset;
 }
 
-function prepareShlForReturn(shl: types.HealthLinkFull) {
-  let flat: types.HealthLinkFullReturn = {
+function prepareShlForReturn(shl: types.HealthLinkFull): types.HealthLinkFullFlat {
+  let flat: types.HealthLinkFull = {
     ...shl,
     ...shl.config,
   };
   delete flat.config;
-  return flat;
+  return flat as types.HealthLinkFullFlat;
 }
 
 export const shlApiRouter = router;
