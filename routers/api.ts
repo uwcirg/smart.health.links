@@ -640,21 +640,23 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
       action: `Verify request credentials`,
     }}
   };
-  // TODO: temp - remove in favor of jwt
-  // Adapter to handle user id in body
-  try {
-    const content = await context.request.body({ type: 'json' }).value;
-    if (content.userId) {
-      console.log("Using user id from body: " + content.userId);
-      context.state.auth = { sub: content.userId };
-      return next();
+
+  // Adapter to allow requests with user id in body
+  // Test/development only
+  if (Deno.env.get('TEST')) {
+    try {
+      const content = await context.request.body({ type: 'json' }).value;
+      if (content.userId) {
+        console.log("Using user id from body: " + content.userId);
+        context.state.auth = { sub: content.userId };
+        return next();
+      }
+      console.log("No user id in body");
+      throw Error("No body");
+    } catch (e) {
+      console.log("No body, skipping userId check");
     }
-    console.log("No user id in body");
-    throw Error("No body");
-  } catch (e) {
-    console.log("No body, skipping userId check");
   }
-  // temp
 
   const token = context.request.headers.get('Authorization');
   if (!token) {
@@ -668,18 +670,19 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     return;
   }
 
-  // TODO: temp - remove in favor of jwt
-  // Adapter to handle management token auth header
-  if (db.DbLinks.managementTokenExists(tokenValue)) {
-    console.log("Trying management token: " + tokenValue);
-    let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
-    if (mtUser) {
-      context.state.auth = { sub: mtUser };
-      console.log("User from management token: " + mtUser);
-      return next();
-    }
+  // Adapter to allow requests with management token auth header
+  // Test/development only
+  if (Deno.env.get('TEST')) {
+    if (db.DbLinks.managementTokenExists(tokenValue)) {
+      console.log("Trying management token: " + tokenValue);
+      let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
+      if (mtUser) {
+        context.state.auth = { sub: mtUser };
+        console.log("User from management token: " + mtUser);
+        return next();
+      }
+    } 
   }
-  // temp
   
   if (!env.JWKS_URL) {
     error(context, logMessage, 401, "Invalid token");
