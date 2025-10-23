@@ -718,7 +718,7 @@ function prepareMinimalShlForReturn(shl: types.HealthLinkFull): types.SHLDecoded
     "flag",
     "label",
     "v"
-  ] as const satisfies SHLDecodedKey[];
+  ];
   const subset: types.SHLDecoded = Object.fromEntries(
     keys.map((key) => [key, preparedSHL[key]])
   ) as Pick<types.HealthLinkFull, SHLDecodedKey>; // We know the result is of this type, not the generic fromEntries return type of Record<string, unknown>.
@@ -726,11 +726,11 @@ function prepareMinimalShlForReturn(shl: types.HealthLinkFull): types.SHLDecoded
 }
 
 function prepareShlForReturn(shl: types.HealthLinkFull): types.HealthLinkFullFlat {
-  let flat: types.HealthLinkFull = {
+  let full: types.HealthLinkFull = {
     ...shl,
     ...shl.config,
   };
-  delete flat.config;
+  let {config, ...flat} = full;
   return flat as types.HealthLinkFullFlat;
 }
 

@@ -53,7 +53,7 @@ export interface SHLinkManifestEntry {
 export interface HealthLinkFileContent {
   contentType: string;
   hash?: string;
-  content: Uint8Array<ArrayBuffer>;
+  content: Uint8Array;
 }
 
 // HealthLink endpoint interface (add and retrieve for manifest)
@@ -89,8 +89,9 @@ export interface HealthLinkManifestRequest {
 
 /** Database table result types */
 export interface cas_item {
+  [key: string]: unknown;
   content_hash: string;
-  content: Uint8Array<ArrayBuffer>;
+  content: Uint8Array;
   content_type: string;
 }
 export interface user {
@@ -117,11 +118,12 @@ export interface shlink_public {
   version?: number;
 }
 export interface shlink_file {
+  [key: string]: unknown;
   shlink?: string;
   label?: string;
   added_time?: string;
   content_type?: string;
-  content_hash?: string;
+  content_hash: string;
 }
 export interface shlink_endpoint {
   id?: string;

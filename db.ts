@@ -91,7 +91,7 @@ export const DbLinks = {
       `INSERT INTO user_shlink (user, shlink)
       values (:user, :shlink)`,
       {
-        user: config.userId,
+        user: userId,
         shlink: link.id,
       },
     );

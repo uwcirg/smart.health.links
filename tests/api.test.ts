@@ -8,24 +8,24 @@ import * as assertions from 'https://deno.land/std@0.133.0/testing/asserts.ts';
 import app from '../server.ts';
 await app;
 
-const usershls: Record<string, types.HealthLinkFull> = {};
+const usershls: Record<string, types.HealthLinkFullFlat> = {};
 
 async function initializeTest(userId: string, config: types.HealthLinkConfig = {}) {
   assertions.assertExists(userId);
-  await createSHL(config);
+  await createSHL(userId, config);
   await updateUserShls(userId);
   await addSHCFile(userId);
   await updateUserShls(userId);
 }
 
-async function createSHL(config: types.HealthLinkConfig = {}) {
+async function createSHL(userId: string, config: types.HealthLinkConfig = {}) {
   // console.log('Public URL: ' + env.PUBLIC_URL);
   const shlResponse = await fetch(`${env.PUBLIC_URL}/api/shl`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify(config),
+    body: JSON.stringify({ userId, ...config })
   });
   const result = await shlResponse.text();
   // console.log('Created ', result);
@@ -54,7 +54,7 @@ async function updateUserShls(userId: string) {
 
   const result = await shlsResponse.text();
   // console.log('User SHLs: ' + result);
-  const shls = JSON.parse(result) as types.HealthLinkFull[];
+  const shls = JSON.parse(result) as types.HealthLinkFullFlat[];
   if (shls.length > 0) {
     usershls[userId] = shls[0];
   }
@@ -131,7 +131,7 @@ Deno.test({
     const userId = randomStringWithEntropy(32);
     let newSHL: types.SHLDecoded;
     await t.step('Create a SHL', async function() {
-      newSHL = await createSHL({ userId });
+      newSHL = await createSHL(userId, {});
     });
     await t.step('Get user shls', async function () {
       await updateUserShls(userId);
@@ -145,7 +145,7 @@ Deno.test({
 
     await t.step('Update user shls', async function () {
       await updateUserShls(userId);
-      const shl: types.HealthLinkFull = usershls[userId];
+      const shl: types.HealthLinkFullFlat = usershls[userId];
       assertions.assert(shl?.files.length === 1);
       assertions.assert(shl?.files[0].contentType === 'application/smart-health-card');
       assertions.assert(shl?.files[0].contentHash.length > 0);
@@ -298,8 +298,8 @@ Deno.test({
       label: label,
     });
     const shl = getUserSHL(userId);
-    assertions.assertEquals(shl.config.passcode, ogPasscode);
-    assertions.assertEquals(shl.config.exp, shl.config.exp);
+    assertions.assertEquals(shl.passcode, ogPasscode);
+    assertions.assertEquals(shl.exp, shl.exp);
     assertions.assertEquals(shl.label, label);
 
     await t.step('Change label', async function () {
