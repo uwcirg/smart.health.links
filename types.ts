@@ -88,6 +88,7 @@ export interface HealthLinkManifestRequest {
 }
 
 /** Database table result types */
+/** [key: string]: unknown --> satisfies sqlite RowObject constraint for <T> in db.queryEntries<T>() calls */
 export interface cas_item {
   [key: string]: unknown;
   content_hash: string;
@@ -95,13 +96,16 @@ export interface cas_item {
   content_type: string;
 }
 export interface user {
+  [key: string]: unknown;
   id?: string;
 }
 export interface user_shlink {
+  [key: string]: unknown;
   user?: string;
   shlink?: string;
 }
 export interface shlink_access {
+  [key: string]: unknown;
   id?: string;
   active?: number;
   config_exp?: number;
@@ -110,6 +114,7 @@ export interface shlink_access {
   passcode_failures_remaining?: number;
 }
 export interface shlink_public {
+  [key: string]: unknown;
   shlink?: string;
   manifest_url?: string;
   flag?: string;
@@ -126,6 +131,7 @@ export interface shlink_file {
   content_hash: string;
 }
 export interface shlink_endpoint {
+  [key: string]: unknown;
   id?: string;
   shlink?: string;
   added_time?: string;
@@ -139,6 +145,7 @@ export interface shlink_endpoint {
   access_token_response?: string;
 }
 export interface shlink_access_log {
+  [key: string]: unknown;
   shlink?: string;
   recipient?: string;
   access_time?: string;
