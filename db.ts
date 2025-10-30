@@ -515,13 +515,13 @@ export const DbLinks = {
     }
     const fileRow = db.queryEntries<types.cas_item>(
       `select
-        content_type,
-        content_hash,
-        content,
-        ${embeddedLengthMaxClause} as content
-        from shlink_file
-        join cas_item on shlink_file.content_hash=cas_item.hash
-        where shlink_file.shlink=:shlId and shlink_file.content_hash=:contentHash`,
+      content_type,
+      content_hash,
+      content,
+      ${embeddedLengthMaxClause} as content
+      from shlink_file
+      join cas_item on shlink_file.content_hash=cas_item.hash
+      where shlink_file.shlink=:shlId and shlink_file.content_hash=:contentHash`,
       { shlId, contentHash },
     );
 
