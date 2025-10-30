@@ -509,6 +509,9 @@ export const DbLinks = {
     return shlinkFiles.map((e) => (this.getFileContent(linkId, e.content_hash, embeddedLengthMax)));
   },
   getFileContent(shlId: string, contentHash: string, embeddedLengthMax: number = Infinity): types.HealthLinkFileContent {
+    if (embeddedLengthMax === Infinity) {
+      embeddedLengthMax = 1e10000;
+    }
     const fileRow = db.queryEntries<types.cas_item>(
       `select
       content_type,
