@@ -510,7 +510,7 @@ export const DbLinks = {
   },
   getFileContent(shlId: string, contentHash: string, embeddedLengthMax: number = Infinity): types.HealthLinkFileContent {
     if (embeddedLengthMax === Infinity) {
-      embeddedLengthMax = 1e10000;
+      embeddedLengthMax = 9e999;
     }
     console.log("embeddedLengthMax", embeddedLengthMax);
     let query =`select
