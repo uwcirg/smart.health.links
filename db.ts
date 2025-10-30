@@ -513,18 +513,15 @@ export const DbLinks = {
     if (embeddedLengthMax === Infinity) {
       embeddedLengthMaxClause = "cas_item.content";
     }
-    console.log("embeddedLengthMax", embeddedLengthMax);
-    let query =`select
-          content_type,
-          content_hash,
-          content,
-          ${embeddedLengthMaxClause} as content
-          from shlink_file
-          join cas_item on shlink_file.content_hash=cas_item.hash
-          where shlink_file.shlink=:shlId and shlink_file.content_hash=:contentHash`;
-    console.log("query", query);
     const fileRow = db.queryEntries<types.cas_item>(
-      query,
+      `select
+        content_type,
+        content_hash,
+        content,
+        ${embeddedLengthMaxClause} as content
+        from shlink_file
+        join cas_item on shlink_file.content_hash=cas_item.hash
+        where shlink_file.shlink=:shlId and shlink_file.content_hash=:contentHash`,
       { shlId, contentHash },
     );
 
