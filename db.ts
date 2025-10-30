@@ -509,15 +509,16 @@ export const DbLinks = {
     return shlinkFiles.map((e) => (this.getFileContent(linkId, e.content_hash, embeddedLengthMax)));
   },
   getFileContent(shlId: string, contentHash: string, embeddedLengthMax: number = Infinity): types.HealthLinkFileContent {
+    let embeddedLengthMaxClause = "(case when length(cas_item.content) <= ${embeddedLengthMax} then cas_item.content else NULL end)";
     if (embeddedLengthMax === Infinity) {
-      embeddedLengthMax = 9e999;
+      embeddedLengthMaxClause = "cas_item.content";
     }
     console.log("embeddedLengthMax", embeddedLengthMax);
     let query =`select
           content_type,
           content_hash,
           content,
-          (case when length(cas_item.content) <= ${embeddedLengthMax} then cas_item.content else NULL end) as content
+          ${embeddedLengthMaxClause} as content
           from shlink_file
           join cas_item on shlink_file.content_hash=cas_item.hash
           where shlink_file.shlink=:shlId and shlink_file.content_hash=:contentHash`;
