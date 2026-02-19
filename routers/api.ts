@@ -643,7 +643,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   // Adapter to allow requests with user id in body
   // Test/development only
-  if (Deno.env.get('TEST')) {
+  if (Deno.env.get('TEST') || Deno.env.get('DEV')) {
     try {
       const content = await context.request.body({ type: 'json' }).value;
       if (content.userId) {
@@ -672,7 +672,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   // Adapter to allow requests with management token auth header
   // Test/development only
-  if (Deno.env.get('TEST')) {
+  if (Deno.env.get('TEST') || Deno.env.get('DEV')) {
     if (db.DbLinks.managementTokenExists(tokenValue)) {
       console.log("Trying management token: " + tokenValue);
       let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
