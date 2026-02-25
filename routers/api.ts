@@ -305,7 +305,12 @@ router.post('/user', async (context: oak.Context) => {
     context.response.body = [];
     return;
   }
-  context.response.body = shls.map(prepareShlForReturn);
+  context.response.body = shls.map((shl) => {
+    let shlink = createShlString(shl); 
+    let fullShl = prepareShlForReturn(shl);
+    fullShl.shlink = shlink;
+    return fullShl;
+  });
   return;
 });
 /** Create SHL */
@@ -329,8 +334,7 @@ router.post('/shl', async (context) => {
     return;
   }
   console.log("Created link " + newLink.id);
-  const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(newLink)));
-  const shlinkBare = `shlink:/${encodedPayload}`; // returns encoded payload per spec/IHE testing
+  const shlinkBare = createShlString(newLink);
   context.response.headers.set('content-type', 'text/plain; charset=utf-8');
   context.response.body = shlinkBare;
   return;
@@ -707,6 +711,12 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 }
 
 type SHLDecodedKey = Extract<keyof types.HealthLinkFull, keyof types.SHLDecoded>;
+
+function createShlString(shl: types.HealthLinkFull): string {
+  const encodedPayload: string = jose.base64url.encode(JSON.stringify(prepareMinimalShlForReturn(shl)));
+  const shlinkBare = `shlink:/${encodedPayload}`; // returns encoded payload per spec/IHE testing
+  return shlinkBare;
+}
 
 function prepareMinimalShlForReturn(shl: types.HealthLinkFull): types.SHLDecoded {
   let preparedSHL = prepareShlForReturn(shl);
