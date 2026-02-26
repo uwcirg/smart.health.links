@@ -183,11 +183,11 @@ router.get('/shl/:shlId/file/:fileHash', (context) => {
       file: context.params.fileHash
     } }
   };
-  const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
-  if (!ticket || ticket.shlId !== context.params.shlId) {
-    error(context, logMessage, 401, "Unauthorized");
-    return;
-  }
+  // const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
+  // if (!ticket || ticket.shlId !== context.params.shlId) {
+  //   error(context, logMessage, 401, "Unauthorized");
+  //   return;
+  // }
 
   const file = db.DbLinks.getFileContent(context.params.shlId, context.params.fileHash);
   context.response.headers.set('content-type', 'application/jose');
