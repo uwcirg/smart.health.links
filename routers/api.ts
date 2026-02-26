@@ -160,13 +160,13 @@ router.post('/shl/:shlId', async (context) => {
     files: db.DbLinks.getAllFileContentForSHL(shl.id, embeddedLengthMax)
       .map((f, _i) => ({
         contentType: f.contentType,
-        embedded: f.content?.length ? new TextDecoder().decode(f.content) : undefined,
+        // embedded: f.content?.length ? new TextDecoder().decode(f.content) : undefined,
         location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/file/${f.hash}?ticket=${ticket}`,
       }))
       .concat(
         db.DbLinks.getManifestEndpointIds(shl.id).map((eid) => ({
           contentType: 'application/smart-api-access',
-          embedded: undefined,
+          // embedded: undefined,
           location: `${env.PUBLIC_URL}/api/shl/${shl?.id}/endpoint/${eid}?ticket=${ticket}`,
         })),
       ) as types.SHLinkManifestEntry[],
