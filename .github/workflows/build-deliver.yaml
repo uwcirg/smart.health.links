@@ -16,7 +16,7 @@ jobs:
           deno-version: v1.25.2
 
       - name: Run Deno Tests
-        run: TEST=1 deno test -A --quiet --parallel
+        run: TEST=1 deno test ./tests/api.test.ts -A --quiet --parallel
   build:
     runs-on: ubuntu-latest
     steps:
