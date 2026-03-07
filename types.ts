@@ -40,7 +40,9 @@ export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFa
 }
 
 // HealthLinkFull without config, and with passcode
-export interface HealthLinkFullFlat extends Omit<HealthLinkFull, 'config'>, Pick<HealthLinkConfig, 'passcode'> {}
+export interface HealthLinkFullFlat extends Omit<HealthLinkFull, 'config'>, Pick<HealthLinkConfig, 'passcode'> {
+  shlink?: string;
+}
 
 // Entry in SHL manifest, can be file or endpoint
 export interface SHLinkManifestEntry {
