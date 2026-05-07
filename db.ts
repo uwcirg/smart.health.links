@@ -130,7 +130,8 @@ export const DbLinks = {
         exp: link.config.exp as number,
         passcode: link.config.passcode as string
       },
-      managementToken: link.managementToken as string
+      managementToken: link.managementToken as string,
+      active: link.active as boolean
     };
   },
   getConfig(shlId: string) {
@@ -288,14 +289,14 @@ export const DbLinks = {
             shlink_public.*,
             shlink_access.config_passcode,
             shlink_access.config_exp,
-            shlink_access.management_token
+            shlink_access.management_token,
+            shlink_access.active
           FROM user_shlink
           JOIN shlink_public on shlink_public.shlink=user_shlink.shlink
           JOIN shlink_access on shlink_access.id=user_shlink.shlink
           WHERE
             user_shlink.user=?
             and user_shlink.shlink=?
-            and shlink_access.active=1
           `)
         .oneEntry([userId, linkId]) as types.shlink_access & types.shlink_public;
       const userShl = {
@@ -311,7 +312,8 @@ export const DbLinks = {
           exp: row.config_exp as number,
           passcode: row.config_passcode as string
         },
-        managementToken: row.management_token as string
+        managementToken: row.management_token as string,
+        active: Boolean(row.active)
       };
       return userShl;
     } catch (e) {
@@ -325,13 +327,13 @@ export const DbLinks = {
           shlink_public.*,
           shlink_access.config_passcode,
           shlink_access.config_exp,
-          shlink_access.management_token
+          shlink_access.management_token,
+          shlink_access.active
         FROM user_shlink
         JOIN shlink_public on shlink_public.shlink=user_shlink.shlink
         JOIN shlink_access on shlink_access.id=user_shlink.shlink
         WHERE
           user_shlink.user=?
-          and shlink_access.active=1
         `)
       .allEntries([userId])
       .map( row => {
@@ -347,7 +349,8 @@ export const DbLinks = {
             exp: row.config_exp as number,
             passcode: row.config_passcode as string
           },
-          managementToken: row.management_token as string
+          managementToken: row.management_token as string,
+          active: Boolean(row.active)
         } as types.HealthLinkFull
       });
     for (const shl of userPubShls) {
