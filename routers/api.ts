@@ -67,7 +67,7 @@ function log(context: oak.Context, msg: types.LogMessageSimple) {
   console.log(JSON.stringify(logMessage)); // for stdout reading
 }
 
-function error(context: oak.Context, content: types.LogMessageSimple, status: number, message: string, props?: { details: {[key: string]: unknown } }) {
+function handleError(context: oak.Context, content: types.LogMessageSimple, status: number, message: string, props?: { details: {[key: string]: unknown } }) {
   content.severity = "error";
   content.outcome = `${status} ${message}`;
   log(context, content);
@@ -85,7 +85,7 @@ router.post('/log', async (context: oak.Context) => {
     }}
   };
   if (!content.action) {
-    error(context, logMessage, 400, "Missing action in request body");
+    handleError(context, logMessage, 400, "Missing action in request body");
     return;
   }
 
@@ -116,21 +116,21 @@ router.post('/shl/:shlId', async (context) => {
   const config: types.HealthLinkManifestRequest = await context.request.body({ type: 'json' }).value;
   const embeddedLengthMax = Math.min(env.EMBEDDED_LENGTH_MAX, config.embeddedLengthMax !== undefined ? config.embeddedLengthMax : Infinity);
   if (!config.recipient) {
-    error(context, logMessage, 400, "Missing recipient in request body");
+    handleError(context, logMessage, 400, "Missing recipient in request body");
     return;
   }
 
   let shl: types.HealthLink | undefined = db.DbLinks.getShlInternal(context.params.shlId);
   if (shl === undefined || !shl?.active) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   if (shl.config.exp && new Date(shl.config.exp * 1000).getTime() < new Date().getTime()) {
-    error(context, logMessage, 404, "SHL is expired");
+    handleError(context, logMessage, 404, "SHL is expired");
     return;
   }
   if (shl.config.passcode && !("passcode" in config)) {
-    error(context, logMessage, 401, "Passcode required", {
+    handleError(context, logMessage, 401, "Passcode required", {
       details: {
         remainingAttempts: shl.passcodeFailuresRemaining
       }
@@ -141,7 +141,7 @@ router.post('/shl/:shlId', async (context) => {
     if (shl.config.passcode.length > 0) {
       db.DbLinks.recordPasscodeFailure(shl.id);
     }
-    error(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts: shl.passcodeFailuresRemaining - 1 }});
+    handleError(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts: shl.passcodeFailuresRemaining - 1 }});
     return;
   }
 
@@ -185,7 +185,7 @@ router.get('/shl/:shlId/file/:fileHash', (context) => {
   };
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
   if (!ticket || ticket.shlId !== context.params.shlId) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
 
@@ -207,13 +207,13 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
   if (!ticket || ticket.shlId !== context.params.shlId) {
     console.log('Cannot request SHL without a valid ticket');
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
 
   const endpoint = await db.DbLinks.getEndpointContent(context.params.shlId, context.params.endpointId);
   if (!endpoint) {
-    error(context, logMessage, 404, "Endpoint not found.");
+    handleError(context, logMessage, 404, "Endpoint not found.");
     return;
   }
   context.response.headers.set('content-type', 'application/jose');
@@ -241,7 +241,7 @@ router.get('/shl/:shlId/active', (context) => {
   };
   const shl = db.DbLinks.getShlInternal(context.params.shlId);
   if (!shl) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const isActive = (shl && shl.active);
@@ -289,7 +289,7 @@ router.post('/authcheck', async (context: oak.Context) => {
     }}
   };
   if (!userId) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
   context.response.headers.set('Content-Type', 'application/json');
@@ -330,7 +330,7 @@ router.post('/shl', async (context) => {
   try {
     newLink = db.DbLinks.create(config, userId);
   } catch (e) {
-    error(context, logMessage, 500, "Failed to create SHL");
+    handleError(context, logMessage, 500, "Failed to create SHL");
     return;
   }
   console.log("Created link " + newLink.id);
@@ -355,12 +355,12 @@ router.put('/shl/:shlId', async (context) => {
     }}
   };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   if (!shl) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
   shl.config.exp = config.exp ?? shl.config.exp;
@@ -387,25 +387,25 @@ router.delete('/shl/:shlId', async (context) => {
     }}
   };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   try {
     const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
     if (!shl) {
-      error(context, logMessage, 401, "Unauthorized");
+      handleError(context, logMessage, 401, "Unauthorized");
       return;
     }
     const deactivated = db.DbLinks.deactivate(shl);
     if (!deactivated) {
-      error(context, logMessage, 500, "Failed to deactivate SHL");
+      handleError(context, logMessage, 500, "Failed to deactivate SHL");
       return;
     }
     const updatedShlList = db.DbLinks.getUserShls(userId)!;
     context.response.headers.set('content-type', 'application/json');
     context.response.body = updatedShlList;
   } catch {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   return;
@@ -426,7 +426,7 @@ router.put('/shl/:shlId/reactivate', async (context) => {
   };
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
   const success = db.DbLinks.reactivate(shl)!;
@@ -455,22 +455,22 @@ router.post('/shl/:shlId/file', async (context) => {
   };
 
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
 
   let contentLength = context.request.headers.get('content-length');
   if (contentLength === null) {
-    error(context, logMessage, 400, "Missing content length");
+    handleError(context, logMessage, 400, "Missing content length");
     return;
   }
   if (Number(contentLength) > fileSizeMax) {
-    error(context, logMessage, 413, "File size limit exceeded", {details: { limit: fileSizeMax }});
+    handleError(context, logMessage, 413, "File size limit exceeded", {details: { limit: fileSizeMax }});
     return;
   }
 
@@ -502,18 +502,18 @@ router.delete('/shl/:shlId/file', async (context) => {
     }}
   };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
   
   const deleted = db.DbLinks.deleteFile(shl.id, currentFileHash);
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    error(context, logMessage, 500, "Failed to delete file");
+    handleError(context, logMessage, 500, "Failed to delete file");
     return;
   }
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
@@ -538,12 +538,12 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   };
 
   if (!db.DbLinks.linkExists(context.params.shlId)) {
-    error(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
   }
   const shl = db.DbLinks.getUserShlInternal(context.params.shlId, userId)!;
   if (!shl) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
 
@@ -571,7 +571,7 @@ router.post('/subscribe', async (context) => {
   const shlSet: { shlId: string; managementToken: string }[] = await context.request.body({ type: 'json' }).value;
   const managedLinks = shlSet.map((req) => db.DbLinks.getManagedShl(req.shlId, req.managementToken)).filter((l) => l !== undefined);
   if (managedLinks.length === 0) {
-    error(context, logMessage, 401, "Unauthorized");
+    handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
 
@@ -598,7 +598,7 @@ router.get('/subscribe/:ticket', (context) => {
     }}
   };
   if (!validForSet) {
-    error(context, logMessage, 401, "Invalid ticket for SSE subscription");
+    handleError(context, logMessage, 401, "Invalid ticket for SSE subscription");
     return;
   }
 
@@ -664,13 +664,13 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   const token = context.request.headers.get('Authorization');
   if (!token) {
-    error(context, logMessage, 401, "Missing token in request header");
+    handleError(context, logMessage, 401, "Missing token in request header");
     return;
   }
 
   const tokenValue = token.split(' ')[1];
   if (!tokenValue) {
-    error(context, logMessage, 401, "Missing token in request header");
+    handleError(context, logMessage, 401, "Missing token in request header");
     return;
   }
 
@@ -689,7 +689,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
   }
   
   if (!env.JWKS_URL) {
-    error(context, logMessage, 401, "Invalid token");
+    handleError(context, logMessage, 401, "Invalid token");
     return;
   }
 
@@ -705,7 +705,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     return next();
   
   } catch (error) {
-    error(context, logMessage, 401, "Invalid token");
+    handleError(context, logMessage, 401, "Invalid token");
     return;
   }
 }
