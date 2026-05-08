@@ -35,7 +35,7 @@ export interface FileSummary {
 }
 
 // All data relating to an SHL, including public fields, internal access criteria, and files
-export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFailuresRemaining' | 'active'> {
+export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFailuresRemaining'> {
   files: FileSummary[];
 }
 

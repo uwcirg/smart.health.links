@@ -306,7 +306,7 @@ router.post('/user', async (context: oak.Context) => {
     return;
   }
   context.response.body = shls.map((shl) => {
-    let shlink = createShlString(shl); 
+    let shlink = createShlString(shl);
     let fullShl = prepareShlForReturn(shl);
     fullShl.shlink = shlink;
     return fullShl;
@@ -403,7 +403,12 @@ router.delete('/shl/:shlId', async (context) => {
     }
     const updatedShlList = db.DbLinks.getUserShls(userId)!;
     context.response.headers.set('content-type', 'application/json');
-    context.response.body = updatedShlList;
+    context.response.body = updatedShlList.map((shl) => {
+      let shlink = createShlString(shl);
+      let fullShl = prepareShlForReturn(shl);
+      fullShl.shlink = shlink;
+      return fullShl;
+    });
   } catch {
     handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
