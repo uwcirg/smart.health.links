@@ -40,7 +40,7 @@ const appRouter = new Router()
 
 app.use(appRouter.routes());
 app.addEventListener('error', (evt) => {
-  if (evt?.error.toString().startsWith('Http: connection closed before message completed')) {
+  if (evt?.error?.toString().startsWith('Http: connection closed before message completed')) {
     // normal expected behavior after a SSE connection dies
     // See https://github.com/oakserver/oak/issues/387
     return;
