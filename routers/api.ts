@@ -3,6 +3,7 @@ import { jose, oak } from '../deps.ts';
 import * as db from '../db.ts';
 import * as types from '../types.ts';
 import { randomStringWithEntropy } from '../util.ts';
+import { createRateLimiter } from '../rateLimit.ts';
 
 const fileSizeMax = env.FILE_SIZE_MAX ?? 1024 * 1024 * 10;
 
@@ -75,6 +76,16 @@ function handleError(context: oak.Context, content: types.LogMessageSimple, stat
 }
 
 export const router = new oak.Router();
+
+/**
+ * Per-IP rate limiting for state-changing requests, applied ahead of auth
+ * so it also covers unauthenticated/invalid-token attempts (e.g. /authcheck).
+ */
+router.use(createRateLimiter({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.RATE_LIMIT_MAX_REQUESTS,
+  methods: ['POST'],
+}));
 
 router.post('/log', async (context: oak.Context) => {
   const content: types.LogMessageSimple = await context.request.body({ type: 'json' }).value;

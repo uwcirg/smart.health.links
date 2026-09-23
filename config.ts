@@ -6,6 +6,8 @@ interface Config {
   PORT?: number;
   JWKS_URL?: string;
   DIR?: string;
+  RATE_LIMIT_WINDOW_MS: number;
+  RATE_LIMIT_MAX_REQUESTS: number;
 };
 
 const port = Number(Deno.env.get("PORT") || 8000);
@@ -19,6 +21,8 @@ const defaultEnv: Config = {
   PORT: port,
   JWKS_URL: "",
   DIR: ".",
+  RATE_LIMIT_WINDOW_MS: 60 * 1000,
+  RATE_LIMIT_MAX_REQUESTS: 30,
 };
 
 const testEnv: Config = {
@@ -26,6 +30,7 @@ const testEnv: Config = {
   PUBLIC_URL: `http://localhost:${test_port}`,
   PORT: test_port,
   DIR: "tests",
+  RATE_LIMIT_MAX_REQUESTS: 1000,
 }
 
 async function envOrDefault(variable: string, defaultValue: string | number) {
