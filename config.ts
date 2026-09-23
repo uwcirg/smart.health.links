@@ -30,6 +30,7 @@ const testEnv: Config = {
   PUBLIC_URL: `http://localhost:${test_port}`,
   PORT: test_port,
   DIR: "tests",
+  RATE_LIMIT_MAX_REQUESTS: 1000,
 }
 
 async function envOrDefault(variable: string, defaultValue: string | number) {
