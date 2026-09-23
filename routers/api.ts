@@ -6,6 +6,8 @@ import { randomStringWithEntropy, isEnvFlagEnabled } from '../util.ts';
 
 const fileSizeMax = env.FILE_SIZE_MAX ?? 1024 * 1024 * 10;
 
+const jwks = env.JWKS_URL ? jose.createRemoteJWKSet(new URL(env.JWKS_URL)) : undefined;
+
 type SubscriptionTicket = string;
 type SubscriptionSet = string[];
 const subscriptionTickets: Map<SubscriptionTicket, SubscriptionSet> = new Map();
@@ -693,12 +695,10 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     } 
   }
   
-  if (!env.JWKS_URL) {
+  if (!jwks) {
     handleError(context, logMessage, 401, "Invalid token");
     return;
   }
-
-  const jwks = await jose.createRemoteJWKSet(new URL(env.JWKS_URL));
 
   try {
     const verifiedDecodedToken = await jose.jwtVerify(tokenValue, jwks, {
