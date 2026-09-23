@@ -2,7 +2,7 @@ import env from '../config.ts';
 import { jose, oak } from '../deps.ts';
 import * as db from '../db.ts';
 import * as types from '../types.ts';
-import { randomStringWithEntropy } from '../util.ts';
+import { randomStringWithEntropy, isEnvFlagEnabled } from '../util.ts';
 
 const fileSizeMax = env.FILE_SIZE_MAX ?? 1024 * 1024 * 10;
 
@@ -652,7 +652,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   // Adapter to allow requests with user id in body
   // Test/development only
-  if (Deno.env.get('TEST') || Deno.env.get('DEV')) {
+  if (isEnvFlagEnabled(Deno.env.get('TEST')) || isEnvFlagEnabled(Deno.env.get('DEV'))) {
     try {
       const content = await context.request.body({ type: 'json' }).value;
       if (content.userId) {
@@ -681,7 +681,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   // Adapter to allow requests with management token auth header
   // Test/development only
-  if (Deno.env.get('TEST') || Deno.env.get('DEV')) {
+  if (isEnvFlagEnabled(Deno.env.get('TEST')) || isEnvFlagEnabled(Deno.env.get('DEV'))) {
     if (db.DbLinks.managementTokenExists(tokenValue)) {
       console.log("Trying management token: " + tokenValue);
       let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);

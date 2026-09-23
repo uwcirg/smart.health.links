@@ -1,3 +1,5 @@
+import { isEnvFlagEnabled } from './util.ts';
+
 interface Config {
   PUBLIC_URL: string;
   EMBEDDED_LENGTH_MAX: number;
@@ -40,7 +42,7 @@ async function envOrDefault(variable: string, defaultValue: string | number) {
   }
   return typeof defaultValue === 'number' ? parseFloat(ret) : ret;
 }
-const fallback = Deno.env.get("TEST") ? testEnv : defaultEnv;
+const fallback = isEnvFlagEnabled(Deno.env.get("TEST")) ? testEnv : defaultEnv;
 const env = Object.fromEntries(
   await Promise.all(Object.entries(fallback).map(async ([k, v]) => [k, await envOrDefault(k, v)])),
 ) as typeof defaultEnv;
