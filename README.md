@@ -15,6 +15,10 @@ deno run --allow-env="PORT","PUBLIC_URL","EMBEDDED_LENGTH_MAX" --allow-read=".",
 deno test --allow-env --allow-read=".","./db" --allow-write="./db" --allow-net
 ```
 
+# Configuration
+
+POST requests (including `/authcheck`) are rate limited per client IP. Defaults to 30 requests per 60 second window; override with `RATE_LIMIT_MAX_REQUESTS` and `RATE_LIMIT_WINDOW_MS`. The server trusts `X-Forwarded-For` from its reverse proxy to identify clients, so it must always run behind one (see `k8s.yml` / `docker-compose.traefik-ingress.yaml`).
+
 # Build in Docker
 
 ```sh
