@@ -7,6 +7,7 @@ interface Config {
   APP_VERSION_STRING?: string;
   PORT?: number;
   JWKS_URL?: string;
+  JWT_ISSUER?: string;
   DIR?: string;
 };
 
@@ -20,6 +21,7 @@ const defaultEnv: Config = {
   APP_VERSION_STRING: "",
   PORT: port,
   JWKS_URL: "",
+  JWT_ISSUER: "",
   DIR: ".",
 };
 

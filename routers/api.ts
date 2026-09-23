@@ -704,11 +704,12 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     const verifiedDecodedToken = await jose.jwtVerify(tokenValue, jwks, {
       algorithms: ['RS256'],
       audience: ['account'],
+      ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
     });
     context.state.auth = verifiedDecodedToken.payload;
-    
+
     return next();
-  
+
   } catch (error) {
     handleError(context, logMessage, 401, "Invalid token");
     return;
