@@ -31,3 +31,12 @@ To check which migrations a given database has applied:
 ```sh
 sqlite3 db/vaxx.db "select id, applied_at from schema_migrations order by id;"
 ```
+
+## Data migrations (`migrations/scripts/`)
+
+Some changes can't be expressed as plain SQL because they need application logic:
+
+- `scripts/backfill-encrypt-passcodes.ts` — one-time: encrypts any legacy plaintext `config_passcode` values.
+- `scripts/rotate-passcode-encryption-key.ts` — run whenever `PASSCODE_ENCRYPTION_KEY` itself changes. Decrypts with the old key and re-encrypts with the new one.
+
+These live in `migrations/scripts/` as standalone Deno scripts and are **not** picked up or run automatically by `runMigrations()` in `db.ts`, they're run manually by whoever is deploying the change. Each script documents its own usage and should be safe to re-run (check-before-write) since "did this already run here" isn't tracked anywhere the way `schema_migrations` tracks `.sql` files.
