@@ -399,7 +399,11 @@ export const DbLinks = {
         );
       });
     } catch (e) {
-      console.error(e);
+      console.error(JSON.stringify({
+        severity: "error",
+        occurred: new Date().toISOString(),
+        entity: { detail: { action: "addFile", error: String(e) } }
+      }));
       return undefined;
     }
 
