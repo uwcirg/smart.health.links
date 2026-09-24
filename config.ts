@@ -1,3 +1,5 @@
+import { randomStringWithEntropy } from './util.ts';
+
 interface Config {
   PUBLIC_URL: string;
   EMBEDDED_LENGTH_MAX: number;
@@ -6,6 +8,8 @@ interface Config {
   PORT?: number;
   JWKS_URL?: string;
   DIR?: string;
+  /** base64url-encoded 32-byte AES-256 key used to encrypt passcodes at rest. */
+  PASSCODE_ENCRYPTION_KEY?: string;
 };
 
 const port = Number(Deno.env.get("PORT") || 8000);
@@ -19,6 +23,7 @@ const defaultEnv: Config = {
   PORT: port,
   JWKS_URL: "",
   DIR: ".",
+  PASSCODE_ENCRYPTION_KEY: "",
 };
 
 const testEnv: Config = {
@@ -26,6 +31,8 @@ const testEnv: Config = {
   PUBLIC_URL: `http://localhost:${test_port}`,
   PORT: test_port,
   DIR: "tests",
+  // Generated fresh per test run so tests don't require a real secret; never use in production.
+  PASSCODE_ENCRYPTION_KEY: randomStringWithEntropy(32),
 }
 
 async function envOrDefault(variable: string, defaultValue: string | number) {

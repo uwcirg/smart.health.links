@@ -2,6 +2,7 @@ import { base64url, fs, queryString, sqlite } from './deps.ts';
 import { clientConnectionListener } from './routers/api.ts';
 import * as types from './types.ts';
 import { randomStringWithEntropy } from './util.ts';
+import { encryptSecret, decryptSecret } from './secrets.ts';
 import env from './config.ts';
 
 const { DB } = sqlite;
@@ -106,8 +107,7 @@ export const DbLinks = {
     db.query(`INSERT INTO user (id, sub) values (:id, :sub)`, { id, sub });
     return id;
   },
-  create(config: types.HealthLinkConfig, userId: string): types.HealthLinkFull {
-    this.createUserIfNotExists(userId);
+  async create(config: types.HealthLinkConfig, userId: string): Promise<types.HealthLinkFull> {
     const link = {
       config,
       id: randomStringWithEntropy(32),
@@ -122,7 +122,7 @@ export const DbLinks = {
         managementToken: link.managementToken,
         active: link.active,
         exp: link.config.exp,
-        passcode: link.config.passcode,
+        passcode: link.config.passcode !== undefined ? await encryptSecret(link.config.passcode) : undefined,
       },
     );
 
@@ -173,7 +173,7 @@ export const DbLinks = {
       active: link.active as boolean
     };
   },
-  getConfig(shlId: string) {
+  async getConfig(shlId: string) {
     let shl;
     const query = db.prepareQuery(`SELECT * from shlink_access where shlink=?`);
     try {
@@ -186,11 +186,11 @@ export const DbLinks = {
 
     return {
       exp: shl.config_exp,
-      passcode: shl.config_passcode,
+      passcode: shl.config_passcode ? await decryptSecret(shl.config_passcode as string) : shl.config_passcode,
       label: shl.label
     };
   },
-  updateConfig(shl: types.HealthLinkFull) {
+  async updateConfig(shl: types.HealthLinkFull) {
     let pub: types.shlink_public;
     const query = db.prepareQuery(`SELECT * from shlink_public where shlink=?`);
     try {
@@ -205,6 +205,7 @@ export const DbLinks = {
     if (!pub.flag?.includes('P')) {
       newFlag = pub.flag + 'P';
     }
+    const encryptedPasscode = shl.config.passcode !== undefined ? await encryptSecret(shl.config.passcode) : undefined;
     db.transaction(() => {
       db.query(
         `UPDATE shlink_public set flag=:flag, label=:label where shlink=:id`,
@@ -219,7 +220,7 @@ export const DbLinks = {
         {
           id: shl.id,
           exp: shl.config.exp,
-          passcode: shl.config.passcode
+          passcode: encryptedPasscode
         }
       );
     });
@@ -263,71 +264,70 @@ export const DbLinks = {
       query.finalize();
     }
   },
-  getShlInternal(linkId: string): types.HealthLink | undefined {
+  async getShlInternal(linkId: string): Promise<types.HealthLink | undefined> {
     const query = db.prepareQuery(`SELECT * from shlink_access where id=?`);
+    let linkRow;
     try {
-      const linkRow = query.oneEntry([linkId]);
-      return {
-        id: linkRow.id as string,
-        active: Boolean(linkRow.active) as boolean,
-        managementToken: linkRow.management_token as string,
-        config: {
-          exp: linkRow.config_exp as number,
-          passcode: linkRow.config_passcode as string,
-        },
-      };
+      linkRow = query.oneEntry([linkId]);
     } catch (e) {
       return undefined;
     } finally {
       query.finalize();
     }
+    return {
+      id: linkRow.id as string,
+      active: Boolean(linkRow.active) as boolean,
+      managementToken: linkRow.management_token as string,
+      config: {
+        exp: linkRow.config_exp as number,
+        passcode: linkRow.config_passcode ? await decryptSecret(linkRow.config_passcode as string) : undefined,
+      },
+    };
   },
-  getUserShlInternal(linkId: string, userId: string): types.HealthLink | undefined {
+  async getUserShlInternal(linkId: string, userId: string): Promise<types.HealthLink | undefined> {
     const userQuery = db.prepareQuery(`
           SELECT * from user_shlink where shlink=? and user=?`);
     const linkQuery = db.prepareQuery(`SELECT * from shlink_access where id=?`);
+    let linkRow;
     try {
       const userRow = userQuery.oneEntry([linkId, userId]); // throws if not found
-
-      const linkRow = linkQuery.oneEntry([linkId]);
-
-      return {
-        id: linkRow.id as string,
-        active: Boolean(linkRow.active) as boolean,
-        managementToken: linkRow.management_token as string,
-        config: {
-          exp: linkRow.config_exp as number,
-          passcode: linkRow.config_passcode as string,
-        },
-      };
+      linkRow = linkQuery.oneEntry([linkId]);
     } catch (e) {
       return undefined;
     } finally {
       userQuery.finalize();
       linkQuery.finalize();
     }
+    return {
+      id: linkRow.id as string,
+      active: Boolean(linkRow.active) as boolean,
+      managementToken: linkRow.management_token as string,
+      config: {
+        exp: linkRow.config_exp as number,
+        passcode: linkRow.config_passcode ? await decryptSecret(linkRow.config_passcode as string) : undefined,
+      },
+    };
   },
-  getManagedShl(linkId: string, managementToken: string): types.HealthLink | undefined {
+  async getManagedShl(linkId: string, managementToken: string): Promise<types.HealthLink | undefined> {
     const query = db.prepareQuery(`SELECT * from shlink_access where id=? and management_token=?`);
+    let linkRow;
     try {
-      const linkRow = query.oneEntry([linkId, managementToken]);
-
-      return {
-        id: linkRow.id as string,
-        active: Boolean(linkRow.active) as boolean,
-        managementToken: linkRow.management_token as string,
-        config: {
-          exp: linkRow.config_exp as number,
-          passcode: linkRow.config_passcode as string,
-        },
-      };
+      linkRow = query.oneEntry([linkId, managementToken]);
     } catch (e) {
       return undefined;
     } finally {
       query.finalize();
     }
+    return {
+      id: linkRow.id as string,
+      active: Boolean(linkRow.active) as boolean,
+      managementToken: linkRow.management_token as string,
+      config: {
+        exp: linkRow.config_exp as number,
+        passcode: linkRow.config_passcode ? await decryptSecret(linkRow.config_passcode as string) : undefined,
+      },
+    };
   },
-
   /** Returns the shl owner's IdP `sub` claim (not the internal user id), for audit logging. */
   getShlOwner(linkId: string): string | undefined {
     const query = db.prepareQuery(`
@@ -344,7 +344,7 @@ export const DbLinks = {
       query.finalize();
     }
   },
-  getUserShl(linkId: string, userId: string): types.HealthLinkFull | undefined {
+  async getUserShl(linkId: string, userId: string): Promise<types.HealthLinkFull | undefined> {
     const query = db.prepareQuery(`
           SELECT
             shlink_public.*,
@@ -359,32 +359,32 @@ export const DbLinks = {
             user_shlink.user=?
             and user_shlink.shlink=?
           `);
+    let row: types.shlink_access & types.shlink_public;
     try {
-      const row = query.oneEntry([userId, linkId]) as types.shlink_access & types.shlink_public;
-      const userShl = {
-        id: row.shlink as string,
-        url: row.manifest_url as string,
-        exp: row.config_exp as number,
-        key: row.encryption_key as string & { length: 43 },
-        flag: row.flag as string,
-        label: row.label as string,
-        v: row.version as number,
-        files: this.getSHLFileSummaries(row.id),
-        config: {
-          exp: row.config_exp as number,
-          passcode: row.config_passcode as string
-        },
-        managementToken: row.management_token as string,
-        active: Boolean(row.active)
-      };
-      return userShl;
+      row = query.oneEntry([userId, linkId]) as types.shlink_access & types.shlink_public;
     } catch (e) {
       return undefined;
     } finally {
       query.finalize();
     }
+    return {
+      id: row.shlink as string,
+      url: row.manifest_url as string,
+      exp: row.config_exp as number,
+      key: row.encryption_key as string & { length: 43 },
+      flag: row.flag as string,
+      label: row.label as string,
+      v: row.version as number,
+      files: this.getSHLFileSummaries(row.id),
+      config: {
+        exp: row.config_exp as number,
+        passcode: row.config_passcode ? await decryptSecret(row.config_passcode as string) : undefined,
+      },
+      managementToken: row.management_token as string,
+      active: Boolean(row.active)
+    };
   },
-  getUserShls(userId: string): Array<types.HealthLinkFull> | undefined {
+  async getUserShls(userId: string): Promise<Array<types.HealthLinkFull> | undefined> {
     const query = db.prepareQuery(`
         SELECT
           shlink_public.*,
@@ -398,28 +398,29 @@ export const DbLinks = {
         WHERE
           user_shlink.user=?
         `);
-    let userPubShls: Array<types.HealthLinkFull>;
+    let rows: Array<types.shlink_access & types.shlink_public>;
     try {
-      userPubShls = query.allEntries([userId]).map( row => {
-        return {
-          id: row.shlink as string,
-          url: row.manifest_url as string,
-          exp: row.config_exp as number,
-          key: row.encryption_key as string & { length: 43 },
-          flag: row.flag as string,
-          label: row.label as string,
-          v: row.version as number,
-          config: {
-            exp: row.config_exp as number,
-            passcode: row.config_passcode as string
-          },
-          managementToken: row.management_token as string,
-          active: Boolean(row.active)
-        } as types.HealthLinkFull
-      });
+      rows = query.allEntries([userId]) as Array<types.shlink_access & types.shlink_public>;
     } finally {
       query.finalize();
     }
+    const userPubShls: Array<types.HealthLinkFull> = await Promise.all(
+      rows.map(async (row) => ({
+        id: row.shlink as string,
+        url: row.manifest_url as string,
+        exp: row.config_exp as number,
+        key: row.encryption_key as string & { length: 43 },
+        flag: row.flag as string,
+        label: row.label as string,
+        v: row.version as number,
+        config: {
+          exp: row.config_exp as number,
+          passcode: row.config_passcode ? await decryptSecret(row.config_passcode as string) : undefined,
+        },
+        managementToken: row.management_token as string,
+        active: Boolean(row.active)
+      } as types.HealthLinkFull)),
+    );
     for (const shl of userPubShls) {
       shl.files = this.getSHLFileSummaries(shl.id);
     }
