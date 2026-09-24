@@ -250,6 +250,8 @@ router.post('/shl/:shlId', async (context) => {
       handleError(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts }});
       return;
     }
+    // If here, successfully matched passcode
+    clearPasscodeFailures(ip, shl.id);
   }
 
   const ticket = randomStringWithEntropy(32);
