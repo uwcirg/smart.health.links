@@ -226,7 +226,7 @@ export const DbLinks = {
     return shl.id;
   },
   reactivate(shl: types.HealthLink): boolean {
-    db.query(`UPDATE shlink_access set active=true, passcode_failures_remaining=5 where id=?`, [shl.id]);
+    db.query(`UPDATE shlink_access set active=true where id=?`, [shl.id]);
     return true;
   },
   linkExists(linkId: string): boolean {
@@ -257,7 +257,6 @@ export const DbLinks = {
       const linkRow = query.oneEntry([linkId]);
       return {
         id: linkRow.id as string,
-        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         managementToken: linkRow.management_token as string,
         config: {
@@ -282,7 +281,6 @@ export const DbLinks = {
 
       return {
         id: linkRow.id as string,
-        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         managementToken: linkRow.management_token as string,
         config: {
@@ -304,7 +302,6 @@ export const DbLinks = {
 
       return {
         id: linkRow.id as string,
-        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         managementToken: linkRow.management_token as string,
         config: {
@@ -611,14 +608,5 @@ export const DbLinks = {
       shlId,
       recipient,
     });
-  },
-  recordPasscodeFailure(shlId: string) {
-    // TODO: add entry to shlink_access_log for IP address and time
-    // add logic around passcode failures in the last N minutes and a limit of attempts within that time.
-
-    // const q = db.prepareQuery(
-    //   `update shlink_access set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
-    // );
-    // q.execute([shlId]);
   },
 };

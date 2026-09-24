@@ -26,6 +26,86 @@ interface ManifestAccessTicket {
 }
 const manifestAccessTickets: Map<string, ManifestAccessTicket> = new Map();
 
+interface PasscodeFailure {
+  ip: string;
+  shlId: string;
+  time: number;
+}
+const PASSCODE_FAILURE_LIMIT = 5;
+const PASSCODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const passcodeFailures: Map<string, PasscodeFailure> = new Map();
+
+function recordPasscodeFailure(ip: string, shlId: string) {
+  const key = randomStringWithEntropy(16, 'passcode-failure-');
+  passcodeFailures.set(key, { ip, shlId, time: Date.now() });
+  setTimeout(() => {
+    passcodeFailures.delete(key);
+  }, PASSCODE_FAILURE_WINDOW_MS);
+}
+
+function countPasscodeFailures(ip: string, shlId: string): number {
+  let count = 0;
+  for (const failure of passcodeFailures.values()) {
+    if (failure.ip === ip && failure.shlId === shlId) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function clearPasscodeFailures(ip: string, shlId: string) {
+  for (const [key, failure] of passcodeFailures.entries()) {
+    if (failure.ip === ip && failure.shlId === shlId) {
+      passcodeFailures.delete(key);
+    }
+  }
+}
+
+type PasscodeLockoutState = "active" | "completed";
+interface PasscodeLockout {
+  level: number;
+  state: PasscodeLockoutState;
+  activeUntil: number; // epoch ms when the active (denying) period ends
+}
+// Progressive backoff: 1m, 5m, 15m, 30m, 1h (repeats at 1h once reached).
+const PASSCODE_LOCKOUT_LEVELS_MS = [1, 5, 15, 30, 60].map((minutes) => minutes * 60 * 1000);
+const PASSCODE_LOCKOUT_GRACE_MS = 15 * 60 * 1000;
+const passcodeLockouts: Map<string, PasscodeLockout> = new Map();
+
+function passcodeLockoutKey(ip: string, shlId: string): string {
+  return `${ip}|${shlId}`;
+}
+
+function getPasscodeLockout(ip: string, shlId: string): PasscodeLockout | undefined {
+  return passcodeLockouts.get(passcodeLockoutKey(ip, shlId));
+}
+
+// Starts (or escalates) a lockout for this ip/shl. Escalation continues from the
+// level of any prior entry still on record (active, or completed but not yet
+// cleaned up), so a repeat offender doesn't get a fresh 1-minute lockout just
+// because their previous one had already finished counting down.
+function triggerPasscodeLockout(ip: string, shlId: string): PasscodeLockout {
+  const key = passcodeLockoutKey(ip, shlId);
+  const previous = passcodeLockouts.get(key);
+  const level = previous ? Math.min(previous.level + 1, PASSCODE_LOCKOUT_LEVELS_MS.length - 1) : 0;
+  const durationMs = PASSCODE_LOCKOUT_LEVELS_MS[level];
+  const lockout: PasscodeLockout = {
+    level,
+    state: "active",
+    activeUntil: Date.now() + durationMs,
+  };
+  passcodeLockouts.set(key, lockout);
+  setTimeout(() => {
+    lockout.state = "completed";
+    setTimeout(() => {
+      // Only remove this entry if it hasn't since been replaced by an escalation.
+      if (passcodeLockouts.get(key) === lockout) {
+        passcodeLockouts.delete(key);
+      }
+    }, PASSCODE_LOCKOUT_GRACE_MS);
+  }, durationMs);
+  return lockout;
+}
 
 function applyLogFallbacks(logMessage: types.LogMessageSimple, defaults: Partial<types.LogMessage>) {
   if (logMessage.entity) {
@@ -72,6 +152,17 @@ function handleError(context: oak.Context, content: types.LogMessageSimple, stat
   content.outcome = `${status} ${message}`;
   log(context, content);
   context.throw(status, message, props);
+}
+
+function denyForLockout(context: oak.Context, content: types.LogMessageSimple, lockout: PasscodeLockout) {
+  const retryAfterSeconds = Math.max(0, Math.ceil((lockout.activeUntil - Date.now()) / 1000));
+  const lockedUntil = new Date(lockout.activeUntil).toISOString();
+  context.response.headers.set('Retry-After', String(retryAfterSeconds));
+  content.entity!.detail!.lockoutLevel = String(lockout.level);
+  content.entity!.detail!.lockedUntil = lockedUntil;
+  handleError(context, content, 429, "Too many incorrect passcode attempts. Try again later.", {
+    details: { retryAfterSeconds, lockedUntil },
+  });
 }
 
 export const router = new oak.Router();
@@ -129,20 +220,36 @@ router.post('/shl/:shlId', async (context) => {
     handleError(context, logMessage, 404, "SHL is expired");
     return;
   }
-  if (shl.config.passcode && !("passcode" in config)) {
-    handleError(context, logMessage, 401, "Passcode required", {
-      details: {
-        remainingAttempts: shl.passcodeFailuresRemaining
-      }
-    });
-    return;
-  }
-  if (shl.config.passcode && shl.config.passcode !== config.passcode) {
-    if (shl.config.passcode.length > 0) {
-      db.DbLinks.recordPasscodeFailure(shl.id);
+  if (shl.config.passcode) {
+    const ip = context.request.ip;
+    const lockout = getPasscodeLockout(ip, shl.id);
+    if (lockout && lockout.state === "active") {
+      denyForLockout(context, logMessage, lockout);
+      return;
     }
-    handleError(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts: shl.passcodeFailuresRemaining - 1 }});
-    return;
+    if (!("passcode" in config)) {
+      const failureCount = countPasscodeFailures(ip, shl.id);
+      handleError(context, logMessage, 401, "Passcode required", {
+        details: {
+          remainingAttempts: PASSCODE_FAILURE_LIMIT - failureCount
+        }
+      });
+      return;
+    }
+    if (shl.config.passcode !== config.passcode) {
+      recordPasscodeFailure(ip, shl.id);
+      const failureCount = countPasscodeFailures(ip, shl.id);
+      if (failureCount >= PASSCODE_FAILURE_LIMIT) {
+        clearPasscodeFailures(ip, shl.id);
+        const newLockout = triggerPasscodeLockout(ip, shl.id);
+        denyForLockout(context, logMessage, newLockout);
+        return;
+      }
+      const remainingAttempts = PASSCODE_FAILURE_LIMIT - failureCount;
+      logMessage.entity!.detail!.remainingAttempts = String(remainingAttempts);
+      handleError(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts }});
+      return;
+    }
   }
 
   const ticket = randomStringWithEntropy(32);
