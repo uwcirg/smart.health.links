@@ -67,8 +67,8 @@ interface PasscodeLockout {
   state: PasscodeLockoutState;
   activeUntil: number; // epoch ms when the active (denying) period ends
 }
-// Progressive backoff: 1m, 5m, 15m, 30m, 1h (repeats at 1h once reached).
-const PASSCODE_LOCKOUT_LEVELS_MS = [1, 5, 15, 30, 60].map((minutes) => minutes * 60 * 1000);
+// Progressive backoff: 1m, 5m, 15m, 1h, 3h, 8h (repeats at 8h once reached).
+const PASSCODE_LOCKOUT_LEVELS_MS = [1, 5, 15, 60, 60 * 3, 60 * 8].map((minutes) => minutes * 60 * 1000);
 const PASSCODE_LOCKOUT_GRACE_MS = 15 * 60 * 1000;
 const passcodeLockouts: Map<string, PasscodeLockout> = new Map();
 
