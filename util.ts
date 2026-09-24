@@ -14,3 +14,7 @@ export function decodeBase64urlToJson<T>(s: string): T {
 export function decodeToJson<T>(s: Uint8Array): T {
   return JSON.parse(new TextDecoder().decode(s)) as T;
 }
+
+export function isEnvFlagEnabled(value: string | undefined | null): boolean {
+  return value === '1' || value?.toLowerCase() === 'true';
+}
