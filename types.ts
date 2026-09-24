@@ -99,6 +99,7 @@ export interface cas_item {
 export interface user {
   [key: string]: unknown;
   id?: string;
+  sub?: string;
 }
 export interface user_shlink {
   [key: string]: unknown;

@@ -95,8 +95,16 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpointContent) {
 }
 
 export const DbLinks = {
-  createUserIfNotExists(userid: string) {
-    return db.query(`INSERT or ignore INTO user (id) values (?)`, [userid]);
+  /** Looks up the internal user id for an IdP `sub` claim, creating a new
+   * proxy-id'd user row on first sight. `sub` is never used as a foreign key. */
+  resolveUserId(sub: string): string {
+    const existing = db.queryEntries<{ id: string }>(`SELECT id FROM user WHERE sub=?`, [sub]);
+    if (existing.length > 0) {
+      return existing[0].id;
+    }
+    const id = randomStringWithEntropy(32);
+    db.query(`INSERT INTO user (id, sub) values (:id, :sub)`, { id, sub });
+    return id;
   },
   create(config: types.HealthLinkConfig, userId: string): types.HealthLinkFull {
     this.createUserIfNotExists(userId);
@@ -240,11 +248,15 @@ export const DbLinks = {
   },
   getManagementTokenUserInternal(managementToken: string): string | undefined {
     const query = db.prepareQuery(
-      `SELECT * from shlink_access JOIN user_shlink on shlink_access.id=user_shlink.shlink where management_token=?`
+      `SELECT user.sub
+        FROM shlink_access
+        JOIN user_shlink ON user_shlink.shlink=shlink_access.id
+        JOIN user ON user.id=user_shlink.user
+        WHERE management_token=?`
     );
     try {
       const result = query.oneEntry([managementToken]);
-      return result.user as string;
+      return result.sub as string;
     } catch (e) {
       return undefined;
     } finally {
@@ -315,11 +327,17 @@ export const DbLinks = {
       query.finalize();
     }
   },
+
+  /** Returns the shl owner's IdP `sub` claim (not the internal user id), for audit logging. */
   getShlOwner(linkId: string): string | undefined {
-    const query = db.prepareQuery(`SELECT * from user_shlink where shlink=?`);
+    const query = db.prepareQuery(`
+      SELECT user.sub as sub
+      FROM user_shlink
+      JOIN user ON user.id = user_shlink.user
+      WHERE user_shlink.shlink=?`);
     try {
       const result = query.oneEntry([linkId]);
-      return result.user as string;
+      return result.sub as string;
     } catch (e) {
       return undefined;
     } finally {
