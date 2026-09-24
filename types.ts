@@ -161,6 +161,7 @@ export interface LogMessage {
   severity: Severity;
   action: Action;
   occurred?: string; // datetime of event
+  request_id?: string; // correlates all log entries for a single request
   subject?: string; // subject id
   agent?: {
     ip_address?: string;
