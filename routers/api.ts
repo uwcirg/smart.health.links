@@ -158,6 +158,15 @@ function handleError(context: oak.Context, content: types.LogMessageSimple, stat
   context.throw(status, message, props);
 }
 
+/**
+ * Resolves the internal user id for the authenticated request.
+ * `context.state.auth.sub` is the IdP subject claim for normal JWT/dev auth, or the 
+ * matching user's sub claim for dev/test management token auth.
+ */
+function getAuthenticatedUserId(context: oak.Context): string {
+  return db.DbLinks.resolveUserId(context.state.auth.sub);
+}
+
 function denyForLockout(context: oak.Context, content: types.LogMessageSimple, lockout: PasscodeLockout) {
   const retryAfterSeconds = Math.max(0, Math.ceil((lockout.activeUntil - Date.now()) / 1000));
   const lockedUntil = new Date(lockout.activeUntil).toISOString();
@@ -413,9 +422,10 @@ router.post('/authcheck', async (context: oak.Context) => {
 });
 /** Get SHLs for user */
 router.post('/user', async (context: oak.Context) => {
-  const shls = db.DbLinks.getUserShls(context.state.auth.sub)!;
+  const userId = getAuthenticatedUserId(context);
+  const shls = (await db.DbLinks.getUserShls(userId))!;
   if (!shls) {
-    console.log(`No SHLinks for user ` + context.state.auth.sub);
+    console.log(`No SHLinks for user ` + userId);
     context.response.body = [];
     return;
   }
@@ -429,12 +439,13 @@ router.post('/user', async (context: oak.Context) => {
 });
 /** Create SHL */
 router.post('/shl', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
   const logMessage: types.LogMessageSimple = {
     action: "create",
-    subject: userId,
-    agent: { who: userId },
+    subject: sub,
+    agent: { who: sub },
     entity: { detail: {
       action: `Create shl`,
       config: JSON.stringify(config),
@@ -455,13 +466,14 @@ router.post('/shl', async (context) => {
 });
 /** Update SHL */
 router.put('/shl/:shlId', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const config: types.HealthLinkConfig = await context.request.body({ type: 'json' }).value;
   const logMessage: types.LogMessageSimple = {
     action: "update",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       action: `Update config for shl '${context.params.shlId}'`,
@@ -488,12 +500,13 @@ router.put('/shl/:shlId', async (context) => {
 });
 /** Deactivate SHL */
 router.delete('/shl/:shlId', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const logMessage: types.LogMessageSimple = {
     action: "delete",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       action: `Delete shl '${context.params.shlId}'`,
@@ -531,12 +544,13 @@ router.delete('/shl/:shlId', async (context) => {
 });
 /** Reactivate SHL */
 router.put('/shl/:shlId/reactivate', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const logMessage: types.LogMessageSimple = {
     action: "update",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       shl: context.params.shlId,
@@ -556,7 +570,8 @@ router.put('/shl/:shlId/reactivate', async (context) => {
 });
 /** Add file to SHL */
 router.post('/shl/:shlId/file', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const newFileBody = await context.request.body({
     type: 'bytes',
     limit: fileSizeMax
@@ -565,7 +580,7 @@ router.post('/shl/:shlId/file', async (context) => {
     action: "create",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       action: `Add file to shl '${context.params.shlId}'`,
@@ -606,13 +621,14 @@ router.post('/shl/:shlId/file', async (context) => {
 });
 /** Delete file from SHL */
 router.delete('/shl/:shlId/file', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const currentFileHash = await context.request.body({type: 'text'}).value;
   const logMessage: types.LogMessageSimple = {
     action: "delete",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       action: `Delete file from shl '${context.params.shlId}'`,
@@ -642,13 +658,14 @@ router.delete('/shl/:shlId/file', async (context) => {
 });
 /** Add endpoint to SHL */
 router.post('/shl/:shlId/endpoint', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
   const config: types.HealthLinkEndpointContent = await context.request.body({ type: 'json' }).value;
   const logMessage: types.LogMessageSimple = {
     action: "create",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       action: `Add endpoint to shl '${context.params.shlId}'`,
@@ -675,12 +692,12 @@ router.post('/shl/:shlId/endpoint', async (context) => {
 });
 /** Subscribe to SHLs related to their management tokens */
 router.post('/subscribe', async (context) => {
-  const userId = context.state.auth.sub;
+  const sub = context.state.auth.sub;
   const logMessage: types.LogMessageSimple = {
     action: "create",
-    subject: userId,
+    subject: sub,
     agent: {
-      who: userId
+      who: sub
     },
     entity: { detail: {
       action: `Subscribe to shl`,
@@ -800,6 +817,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
       console.log("Trying management token: " + tokenValue);
       let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
       if (mtUser) {
+        // mtUser is the user sub claim; it will be resolved to an internal id as one.
         context.state.auth = { sub: mtUser };
         console.log("User from management token: " + mtUser);
         return next();
