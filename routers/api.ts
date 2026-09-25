@@ -69,7 +69,7 @@ interface PasscodeLockout {
 }
 // Progressive backoff: 1m, 5m, 15m, 1h, 3h, 8h (repeats at 8h once reached).
 const PASSCODE_LOCKOUT_LEVELS_MS = [1, 5, 15, 60, 60 * 3, 60 * 8].map((minutes) => minutes * 60 * 1000);
-const PASSCODE_LOCKOUT_GRACE_MS = 15 * 60 * 1000;
+const PASSCODE_LOCKOUT_GRACE_MS = 8 * 60 * 60 * 1000; // 8 hours
 const passcodeLockouts: Map<string, PasscodeLockout> = new Map();
 
 function passcodeLockoutKey(ip: string, shlId: string): string {
@@ -78,6 +78,10 @@ function passcodeLockoutKey(ip: string, shlId: string): string {
 
 function getPasscodeLockout(ip: string, shlId: string): PasscodeLockout | undefined {
   return passcodeLockouts.get(passcodeLockoutKey(ip, shlId));
+}
+
+function clearPasscodeLockout(ip: string, shlId: string) {
+  passcodeLockouts.delete(passcodeLockoutKey(ip, shlId));
 }
 
 // Starts (or escalates) a lockout for this ip/shl. Escalation continues from the
@@ -252,6 +256,7 @@ router.post('/shl/:shlId', async (context) => {
     }
     // If here, successfully matched passcode
     clearPasscodeFailures(ip, shl.id);
+    clearPasscodeLockout(ip, shl.id);
   }
 
   const ticket = randomStringWithEntropy(32);
