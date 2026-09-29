@@ -1,4 +1,4 @@
-import { isEnvFlagEnabled } from './util.ts';
+import { randomStringWithEntropy, isEnvFlagEnabled } from './util.ts';
 
 interface Config {
   PUBLIC_URL: string;
@@ -11,6 +11,7 @@ interface Config {
   JWKS_URL?: string;
   JWT_ISSUER?: string;
   DIR?: string;
+  PASSCODE_ENCRYPTION_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
 };
 
@@ -26,6 +27,7 @@ const defaultEnv: Config = {
   JWKS_URL: "",
   JWT_ISSUER: "",
   DIR: ".",
+  PASSCODE_ENCRYPTION_KEY: "",
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: 30,
   CORS_ALLOWED_ORIGINS: "",
@@ -36,6 +38,7 @@ const testEnv: Config = {
   PUBLIC_URL: `http://localhost:${test_port}`,
   PORT: test_port,
   DIR: "tests",
+  PASSCODE_ENCRYPTION_KEY: randomStringWithEntropy(32),
   RATE_LIMIT_MAX_REQUESTS: 1000,
 }
 
