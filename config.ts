@@ -6,6 +6,7 @@ interface Config {
   PORT?: number;
   JWKS_URL?: string;
   DIR?: string;
+  CORS_ALLOWED_ORIGINS?: string;
 };
 
 const port = Number(Deno.env.get("PORT") || 8000);
@@ -19,6 +20,7 @@ const defaultEnv: Config = {
   PORT: port,
   JWKS_URL: "",
   DIR: ".",
+  CORS_ALLOWED_ORIGINS: "",
 };
 
 const testEnv: Config = {

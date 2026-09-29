@@ -15,7 +15,15 @@ app.use(async (ctx, next) => {
   console.log(`${ctx.request.method} ${ctx.request.url} - ${status}, ${(t1-t0)}ms`);
 });
 
-app.use(oakCors());
+const allowedOrigins = env.CORS_ALLOWED_ORIGINS
+  ? env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : undefined;
+
+if (allowedOrigins) {
+  console.info('CORS restricted to allow list:', allowedOrigins.join(', '));
+}
+
+app.use(oakCors(allowedOrigins ? { origin: allowedOrigins } : undefined));
 
 app.use(async (ctx, next) => {
   try {
