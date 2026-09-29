@@ -30,15 +30,46 @@ export async function initializeDb() {
     }
   }
   const db = new DB(dir + '/db/vaxx.db');
-  const schema = await Deno.readTextFile('./schema.sql');
-  schema.split(/\n\n/).forEach((q) => {
-    try {
-      db.execute(q);
-    } catch (e) {
-      if (!q.match('ok_to_fail')) throw e;
-    }
-  });
+  await runMigrations(db);
   return db;
+}
+
+async function runMigrations(db: InstanceType<typeof DB>) {
+  db.execute(`
+    CREATE TABLE IF NOT EXISTS schema_migrations(
+      id TEXT PRIMARY KEY,
+      applied_at DATETIME NOT NULL DEFAULT(DATETIME('now'))
+    )
+  `);
+
+  const applied = new Set(
+    db.queryEntries<{ id: string }>(`SELECT id FROM schema_migrations`).map((row: { id: string }) => row.id),
+  );
+
+  const migrationFiles: string[] = [];
+  for await (const entry of Deno.readDir('./migrations')) {
+    if (entry.isFile && entry.name.endsWith('.sql')) {
+      migrationFiles.push(entry.name);
+    }
+  }
+  migrationFiles.sort();
+
+  for (const fileName of migrationFiles) {
+    if (applied.has(fileName)) continue;
+    console.log(`Applying migration ${fileName}`);
+    const migration = await Deno.readTextFile(`./migrations/${fileName}`);
+    db.transaction(() => {
+      migration.split(/\n\n/).forEach((q: string) => {
+        if (!q.trim()) return;
+        try {
+          db.execute(q);
+        } catch (e) {
+          if (!q.match('ok_to_fail')) throw e;
+        }
+      });
+      db.query(`INSERT INTO schema_migrations (id) VALUES (?)`, [fileName]);
+    });
+  }
 }
 
 async function updateAccessToken(endpoint: types.HealthLinkEndpointContent) {
