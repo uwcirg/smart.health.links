@@ -2,6 +2,8 @@ interface Config {
   PUBLIC_URL: string;
   EMBEDDED_LENGTH_MAX: number;
   FILE_SIZE_MAX: number;
+  RATE_LIMIT_WINDOW_MS: number;
+  RATE_LIMIT_MAX_REQUESTS: number;
   APP_VERSION_STRING?: string;
   PORT?: number;
   JWKS_URL?: string;
@@ -20,6 +22,8 @@ const defaultEnv: Config = {
   PORT: port,
   JWKS_URL: "",
   DIR: ".",
+  RATE_LIMIT_WINDOW_MS: 60 * 1000,
+  RATE_LIMIT_MAX_REQUESTS: 30,
   CORS_ALLOWED_ORIGINS: "",
 };
 
@@ -28,6 +32,7 @@ const testEnv: Config = {
   PUBLIC_URL: `http://localhost:${test_port}`,
   PORT: test_port,
   DIR: "tests",
+  RATE_LIMIT_MAX_REQUESTS: 1000,
 }
 
 async function envOrDefault(variable: string, defaultValue: string | number) {
