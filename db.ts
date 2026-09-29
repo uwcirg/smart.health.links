@@ -30,15 +30,46 @@ export async function initializeDb() {
     }
   }
   const db = new DB(dir + '/db/vaxx.db');
-  const schema = await Deno.readTextFile('./schema.sql');
-  schema.split(/\n\n/).forEach((q) => {
-    try {
-      db.execute(q);
-    } catch (e) {
-      if (!q.match('ok_to_fail')) throw e;
-    }
-  });
+  await runMigrations(db);
   return db;
+}
+
+async function runMigrations(db: InstanceType<typeof DB>) {
+  db.execute(`
+    CREATE TABLE IF NOT EXISTS schema_migrations(
+      id TEXT PRIMARY KEY,
+      applied_at DATETIME NOT NULL DEFAULT(DATETIME('now'))
+    )
+  `);
+
+  const applied = new Set(
+    db.queryEntries<{ id: string }>(`SELECT id FROM schema_migrations`).map((row: { id: string }) => row.id),
+  );
+
+  const migrationFiles: string[] = [];
+  for await (const entry of Deno.readDir('./migrations')) {
+    if (entry.isFile && entry.name.endsWith('.sql')) {
+      migrationFiles.push(entry.name);
+    }
+  }
+  migrationFiles.sort();
+
+  for (const fileName of migrationFiles) {
+    if (applied.has(fileName)) continue;
+    console.log(`Applying migration ${fileName}`);
+    const migration = await Deno.readTextFile(`./migrations/${fileName}`);
+    db.transaction(() => {
+      migration.split(/\n\n/).forEach((q: string) => {
+        if (!q.trim()) return;
+        try {
+          db.execute(q);
+        } catch (e) {
+          if (!q.match('ok_to_fail')) throw e;
+        }
+      });
+      db.query(`INSERT INTO schema_migrations (id) VALUES (?)`, [fileName]);
+    });
+  }
 }
 
 async function updateAccessToken(endpoint: types.HealthLinkEndpointContent) {
@@ -195,7 +226,7 @@ export const DbLinks = {
     return shl.id;
   },
   reactivate(shl: types.HealthLink): boolean {
-    db.query(`UPDATE shlink_access set active=true, passcode_failures_remaining=5 where id=?`, [shl.id]);
+    db.query(`UPDATE shlink_access set active=true where id=?`, [shl.id]);
     return true;
   },
   linkExists(linkId: string): boolean {
@@ -226,7 +257,6 @@ export const DbLinks = {
       const linkRow = query.oneEntry([linkId]);
       return {
         id: linkRow.id as string,
-        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         managementToken: linkRow.management_token as string,
         config: {
@@ -251,7 +281,6 @@ export const DbLinks = {
 
       return {
         id: linkRow.id as string,
-        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         managementToken: linkRow.management_token as string,
         config: {
@@ -273,7 +302,6 @@ export const DbLinks = {
 
       return {
         id: linkRow.id as string,
-        passcodeFailuresRemaining: linkRow.passcode_failures_remaining as number,
         active: Boolean(linkRow.active) as boolean,
         managementToken: linkRow.management_token as string,
         config: {
@@ -580,14 +608,5 @@ export const DbLinks = {
       shlId,
       recipient,
     });
-  },
-  recordPasscodeFailure(shlId: string) {
-    // TODO: add entry to shlink_access_log for IP address and time
-    // add logic around passcode failures in the last N minutes and a limit of attempts within that time.
-
-    // const q = db.prepareQuery(
-    //   `update shlink_access set passcode_failures_remaining = passcode_failures_remaining - 1 where id=?`
-    // );
-    // q.execute([shlId]);
   },
 };

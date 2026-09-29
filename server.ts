@@ -4,7 +4,9 @@ const { Application, Router } = oak;
 const { oakCors } = cors;
 import env from './config.ts';
 
-const app = new Application({ logErrors: false });
+// Trust X-Forwarded-For from the reverse proxy (nginx-ingress/Traefik) in front of
+// every deployment, so request.ip reflects the real client for rate limiting.
+const app = new Application({ logErrors: false, proxy: true });
 
 app.use(async (ctx, next) => {
   const t0 = new Date().getTime();
@@ -15,7 +17,15 @@ app.use(async (ctx, next) => {
   console.log(`${ctx.request.method} ${ctx.request.url} - ${status}, ${(t1-t0)}ms`);
 });
 
-app.use(oakCors());
+const allowedOrigins = env.CORS_ALLOWED_ORIGINS
+  ? env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : undefined;
+
+if (allowedOrigins) {
+  console.info('CORS restricted to allow list:', allowedOrigins.join(', '));
+}
+
+app.use(oakCors(allowedOrigins ? { origin: allowedOrigins } : undefined));
 
 app.use(async (ctx, next) => {
   try {
