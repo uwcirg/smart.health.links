@@ -1,11 +1,17 @@
+import { isEnvFlagEnabled } from './util.ts';
+
 interface Config {
   PUBLIC_URL: string;
   EMBEDDED_LENGTH_MAX: number;
   FILE_SIZE_MAX: number;
+  RATE_LIMIT_WINDOW_MS: number;
+  RATE_LIMIT_MAX_REQUESTS: number;
   APP_VERSION_STRING?: string;
   PORT?: number;
   JWKS_URL?: string;
+  JWT_ISSUER?: string;
   DIR?: string;
+  CORS_ALLOWED_ORIGINS?: string;
 };
 
 const port = Number(Deno.env.get("PORT") || 8000);
@@ -18,7 +24,11 @@ const defaultEnv: Config = {
   APP_VERSION_STRING: "",
   PORT: port,
   JWKS_URL: "",
+  JWT_ISSUER: "",
   DIR: ".",
+  RATE_LIMIT_WINDOW_MS: 60 * 1000,
+  RATE_LIMIT_MAX_REQUESTS: 30,
+  CORS_ALLOWED_ORIGINS: "",
 };
 
 const testEnv: Config = {
@@ -26,6 +36,7 @@ const testEnv: Config = {
   PUBLIC_URL: `http://localhost:${test_port}`,
   PORT: test_port,
   DIR: "tests",
+  RATE_LIMIT_MAX_REQUESTS: 1000,
 }
 
 async function envOrDefault(variable: string, defaultValue: string | number) {
@@ -40,7 +51,7 @@ async function envOrDefault(variable: string, defaultValue: string | number) {
   }
   return typeof defaultValue === 'number' ? parseFloat(ret) : ret;
 }
-const fallback = Deno.env.get("TEST") ? testEnv : defaultEnv;
+const fallback = isEnvFlagEnabled(Deno.env.get("TEST")) ? testEnv : defaultEnv;
 const env = Object.fromEntries(
   await Promise.all(Object.entries(fallback).map(async ([k, v]) => [k, await envOrDefault(k, v)])),
 ) as typeof defaultEnv;

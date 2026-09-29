@@ -285,6 +285,52 @@ Deno.test({
 });
 
 Deno.test({
+  name: 'Passcode Lockout',
+  async fn(t) {
+    const userId = randomStringWithEntropy(32);
+    const passcode = 'correct-horse';
+    const shl = await createSHL(userId, { passcode });
+
+    await t.step('Wrong passcode attempts count down remaining attempts', async function () {
+      for (let expectedRemaining = 4; expectedRemaining >= 1; expectedRemaining--) {
+        const manifestResponse = await getManifest(
+          shl.id,
+          { passcode: 'wrong', recipient: 'attacker' }
+        );
+        const manifestContent = await manifestResponse.json();
+        assertions.assertEquals(manifestResponse.status, 401);
+        assertions.assertEquals(manifestContent.details.remainingAttempts, expectedRemaining);
+      }
+    });
+
+    await t.step('5th wrong attempt locks out the (IP, SHL) pair instead of returning a plain 401', async function () {
+      const manifestResponse = await getManifest(
+        shl.id,
+        { passcode: 'wrong', recipient: 'attacker' }
+      );
+      const manifestContent = await manifestResponse.json();
+      assertions.assertEquals(manifestResponse.status, 429);
+      assertions.assertExists(manifestContent.details.retryAfterSeconds);
+      assertions.assertExists(manifestContent.details.lockedUntil);
+      assertions.assertEquals(
+        manifestResponse.headers.get('retry-after'),
+        String(manifestContent.details.retryAfterSeconds),
+      );
+    });
+
+    await t.step('Correct passcode is still denied while the lockout is active', async function () {
+      const manifestResponse = await getManifest(
+        shl.id,
+        { passcode, recipient: 'attacker' }
+      );
+      assertions.assertEquals(manifestResponse.status, 429);
+    });
+  },
+  sanitizeOps: false,
+  sanitizeResources: false,
+});
+
+Deno.test({
   name: 'Configuration Interactions',
   async fn(t) {
     const userId = randomStringWithEntropy(32);

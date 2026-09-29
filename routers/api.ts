@@ -2,9 +2,12 @@ import env from '../config.ts';
 import { jose, oak } from '../deps.ts';
 import * as db from '../db.ts';
 import * as types from '../types.ts';
-import { randomStringWithEntropy } from '../util.ts';
+import { randomStringWithEntropy, isEnvFlagEnabled } from '../util.ts';
+import { createRateLimiter } from '../rateLimit.ts';
 
 const fileSizeMax = env.FILE_SIZE_MAX ?? 1024 * 1024 * 10;
+
+const jwks = env.JWKS_URL ? jose.createRemoteJWKSet(new URL(env.JWKS_URL)) : undefined;
 
 type SubscriptionTicket = string;
 type SubscriptionSet = string[];
@@ -26,9 +29,89 @@ interface ManifestAccessTicket {
 }
 const manifestAccessTickets: Map<string, ManifestAccessTicket> = new Map();
 
-function redactConfig(config: types.HealthLinkConfig): Record<string, unknown> {
-  const { passcode, ...rest } = config;
-  return { ...rest, passcode: passcode ? '[REDACTED]' : undefined };
+interface PasscodeFailure {
+  ip: string;
+  shlId: string;
+  time: number;
+}
+const PASSCODE_FAILURE_LIMIT = 5;
+const PASSCODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const passcodeFailures: Map<string, PasscodeFailure> = new Map();
+
+function recordPasscodeFailure(ip: string, shlId: string) {
+  const key = randomStringWithEntropy(16, 'passcode-failure-');
+  passcodeFailures.set(key, { ip, shlId, time: Date.now() });
+  setTimeout(() => {
+    passcodeFailures.delete(key);
+  }, PASSCODE_FAILURE_WINDOW_MS);
+}
+
+function countPasscodeFailures(ip: string, shlId: string): number {
+  let count = 0;
+  for (const failure of passcodeFailures.values()) {
+    if (failure.ip === ip && failure.shlId === shlId) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function clearPasscodeFailures(ip: string, shlId: string) {
+  for (const [key, failure] of passcodeFailures.entries()) {
+    if (failure.ip === ip && failure.shlId === shlId) {
+      passcodeFailures.delete(key);
+    }
+  }
+}
+
+type PasscodeLockoutState = "active" | "completed";
+interface PasscodeLockout {
+  level: number;
+  state: PasscodeLockoutState;
+  activeUntil: number; // epoch ms when the active (denying) period ends
+}
+// Progressive backoff: 1m, 5m, 15m, 1h, 3h, 8h (repeats at 8h once reached).
+const PASSCODE_LOCKOUT_LEVELS_MS = [1, 5, 15, 60, 60 * 3, 60 * 8].map((minutes) => minutes * 60 * 1000);
+const PASSCODE_LOCKOUT_GRACE_MS = 8 * 60 * 60 * 1000; // 8 hours
+const passcodeLockouts: Map<string, PasscodeLockout> = new Map();
+
+function passcodeLockoutKey(ip: string, shlId: string): string {
+  return `${ip}|${shlId}`;
+}
+
+function getPasscodeLockout(ip: string, shlId: string): PasscodeLockout | undefined {
+  return passcodeLockouts.get(passcodeLockoutKey(ip, shlId));
+}
+
+function clearPasscodeLockout(ip: string, shlId: string) {
+  passcodeLockouts.delete(passcodeLockoutKey(ip, shlId));
+}
+
+// Starts (or escalates) a lockout for this ip/shl. Escalation continues from the
+// level of any prior entry still on record (active, or completed but not yet
+// cleaned up), so a repeat offender doesn't get a fresh 1-minute lockout just
+// because their previous one had already finished counting down.
+function triggerPasscodeLockout(ip: string, shlId: string): PasscodeLockout {
+  const key = passcodeLockoutKey(ip, shlId);
+  const previous = passcodeLockouts.get(key);
+  const level = previous ? Math.min(previous.level + 1, PASSCODE_LOCKOUT_LEVELS_MS.length - 1) : 0;
+  const durationMs = PASSCODE_LOCKOUT_LEVELS_MS[level];
+  const lockout: PasscodeLockout = {
+    level,
+    state: "active",
+    activeUntil: Date.now() + durationMs,
+  };
+  passcodeLockouts.set(key, lockout);
+  setTimeout(() => {
+    lockout.state = "completed";
+    setTimeout(() => {
+      // Only remove this entry if it hasn't since been replaced by an escalation.
+      if (passcodeLockouts.get(key) === lockout) {
+        passcodeLockouts.delete(key);
+      }
+    }, PASSCODE_LOCKOUT_GRACE_MS);
+  }, durationMs);
+  return lockout;
 }
 
 function applyLogFallbacks(logMessage: types.LogMessageSimple, defaults: Partial<types.LogMessage>) {
@@ -39,6 +122,11 @@ function applyLogFallbacks(logMessage: types.LogMessageSimple, defaults: Partial
   logMessage.source = {...defaults.source, ...logMessage.source};
   logMessage.agent = {...defaults.agent, ...logMessage.agent};
   return {...defaults, ...logMessage};
+}
+
+function redactConfig(config: types.HealthLinkConfig): Record<string, unknown> {
+  const { passcode, ...rest } = config;
+  return { ...rest, passcode: passcode ? '[REDACTED]' : undefined };
 }
 
 function log(context: oak.Context, msg: types.LogMessageSimple) {  
@@ -82,7 +170,52 @@ function handleError(context: oak.Context, content: types.LogMessageSimple, stat
   context.throw(status, message, props);
 }
 
+function denyForLockout(context: oak.Context, content: types.LogMessageSimple, lockout: PasscodeLockout) {
+  const retryAfterSeconds = Math.max(0, Math.ceil((lockout.activeUntil - Date.now()) / 1000));
+  const lockedUntil = new Date(lockout.activeUntil).toISOString();
+  context.response.headers.set('Retry-After', String(retryAfterSeconds));
+  content.entity!.detail!.lockoutLevel = String(lockout.level);
+  content.entity!.detail!.lockedUntil = lockedUntil;
+  handleError(context, content, 429, "Too many incorrect passcode attempts. Try again later.", {
+    details: { retryAfterSeconds, lockedUntil },
+  });
+}
+
 export const router = new oak.Router();
+
+/**
+ * Per-IP rate limiting for state-changing requests, applied ahead of auth
+ * so it also covers unauthenticated/invalid-token attempts (e.g. /authcheck).
+ */
+router.use(createRateLimiter({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.RATE_LIMIT_MAX_REQUESTS,
+  methods: ['POST'],
+}));
+
+router.post('/log', async (context: oak.Context) => {
+  const content: types.LogMessageSimple = await context.request.body({ type: 'json' }).value;
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    entity: { detail: {
+      action: "Post log message",
+    }}
+  };
+  if (!content.action) {
+    handleError(context, logMessage, 400, "Missing action in request body");
+    return;
+  }
+
+  let defaults: Partial<types.LogMessage> = {
+    source: {
+      type: "external-client"
+    }
+  };
+  const contentWithFallbacks = applyLogFallbacks(content, defaults);
+  log(context, contentWithFallbacks);
+  context.response.status = 200;
+  return;
+});
 
 /**
  * Open endpoints for SHL and content access
@@ -114,20 +247,39 @@ router.post('/shl/:shlId', async (context) => {
     handleError(context, logMessage, 404, "SHL is expired");
     return;
   }
-  if (shl.config.passcode && !("passcode" in config)) {
-    handleError(context, logMessage, 401, "Passcode required", {
-      details: {
-        remainingAttempts: shl.passcodeFailuresRemaining
-      }
-    });
-    return;
-  }
-  if (shl.config.passcode && shl.config.passcode !== config.passcode) {
-    if (shl.config.passcode.length > 0) {
-      db.DbLinks.recordPasscodeFailure(shl.id);
+  if (shl.config.passcode) {
+    const ip = context.request.ip;
+    const lockout = getPasscodeLockout(ip, shl.id);
+    if (lockout && lockout.state === "active") {
+      denyForLockout(context, logMessage, lockout);
+      return;
     }
-    handleError(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts: shl.passcodeFailuresRemaining - 1 }});
-    return;
+    if (!("passcode" in config)) {
+      const failureCount = countPasscodeFailures(ip, shl.id);
+      handleError(context, logMessage, 401, "Passcode required", {
+        details: {
+          remainingAttempts: PASSCODE_FAILURE_LIMIT - failureCount
+        }
+      });
+      return;
+    }
+    if (shl.config.passcode !== config.passcode) {
+      recordPasscodeFailure(ip, shl.id);
+      const failureCount = countPasscodeFailures(ip, shl.id);
+      if (failureCount >= PASSCODE_FAILURE_LIMIT) {
+        clearPasscodeFailures(ip, shl.id);
+        const newLockout = triggerPasscodeLockout(ip, shl.id);
+        denyForLockout(context, logMessage, newLockout);
+        return;
+      }
+      const remainingAttempts = PASSCODE_FAILURE_LIMIT - failureCount;
+      logMessage.entity!.detail!.remainingAttempts = String(remainingAttempts);
+      handleError(context, logMessage, 401, "Incorrect passcode", {details: { remainingAttempts }});
+      return;
+    }
+    // If here, successfully matched passcode
+    clearPasscodeFailures(ip, shl.id);
+    clearPasscodeLockout(ip, shl.id);
   }
 
   const ticket = randomStringWithEntropy(32);
@@ -698,7 +850,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   // Adapter to allow requests with user id in body
   // Test/development only
-  if (Deno.env.get('TEST') || Deno.env.get('DEV')) {
+  if (isEnvFlagEnabled(Deno.env.get('TEST')) || isEnvFlagEnabled(Deno.env.get('DEV'))) {
     try {
       const content = await context.request.body({ type: 'json' }).value;
       if (content.userId) {
@@ -727,7 +879,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
 
   // Adapter to allow requests with management token auth header
   // Test/development only
-  if (Deno.env.get('TEST') || Deno.env.get('DEV')) {
+  if (isEnvFlagEnabled(Deno.env.get('TEST')) || isEnvFlagEnabled(Deno.env.get('DEV'))) {
     if (db.DbLinks.managementTokenExists(tokenValue)) {
       console.log("Trying management token");
       let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
@@ -739,17 +891,16 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     } 
   }
   
-  if (!env.JWKS_URL) {
+  if (!jwks) {
     handleError(context, logMessage, 401, "Invalid token");
     return;
   }
-
-  const jwks = await jose.createRemoteJWKSet(new URL(env.JWKS_URL));
 
   try {
     const verifiedDecodedToken = await jose.jwtVerify(tokenValue, jwks, {
       algorithms: ['RS256'],
       audience: ['account'],
+      ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
     });
     context.state.auth = verifiedDecodedToken.payload;
     
@@ -760,8 +911,9 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
       agent: { who: subject },
       outcome: "200 OK",
     });
+
     return next();
-  
+
   } catch (error) {
     handleError(context, logMessage, 401, "Invalid token");
     return;

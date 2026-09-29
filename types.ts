@@ -12,7 +12,6 @@ export interface HealthLink {
   active: boolean;
   id: string;
   managementToken: string;
-  passcodeFailuresRemaining: number;
 }
 
 // Public SHL content exposed via "/shlink:" url
@@ -35,7 +34,7 @@ export interface FileSummary {
 }
 
 // All data relating to an SHL, including public fields, internal access criteria, and files
-export interface HealthLinkFull extends SHLDecoded, Omit<HealthLink, 'passcodeFailuresRemaining'> {
+export interface HealthLinkFull extends SHLDecoded, HealthLink {
   files: FileSummary[];
 }
 
@@ -113,7 +112,6 @@ export interface shlink_access {
   config_exp?: number;
   config_passcode?: string;
   management_token?: string;
-  passcode_failures_remaining?: number;
 }
 export interface shlink_public {
   [key: string]: unknown;
