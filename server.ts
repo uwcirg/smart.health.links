@@ -9,12 +9,24 @@ import env from './config.ts';
 const app = new Application({ logErrors: false, proxy: true });
 
 app.use(async (ctx, next) => {
+  ctx.state.requestId = crypto.randomUUID();
   const t0 = new Date().getTime();
   await next();
   const t1 = new Date().getTime();
-  const rt = ctx.response.headers.get("X-Response-Time");
   const status = ctx.response.status;
-  console.log(`${ctx.request.method} ${ctx.request.url} - ${status}, ${(t1-t0)}ms`);
+  console.log(JSON.stringify({
+    severity: "info",
+    occurred: new Date().toISOString(),
+    request_id: ctx.state.requestId,
+    entity: {
+      detail: {
+        method: ctx.request.method,
+        url: ctx.request.url.toString(),
+        status: String(status),
+        duration_ms: String(t1 - t0),
+      }
+    }
+  }));
 });
 
 const allowedOrigins = env.CORS_ALLOWED_ORIGINS
@@ -31,6 +43,24 @@ app.use(async (ctx, next) => {
   try {
     await next();
   } catch (err) {
+    // Handlers that already audited this failure via handleError() set this flag
+    // before throwing, so it isn't logged twice here.
+    if (!ctx.state.errorHandled) {
+      console.log(JSON.stringify({
+        severity: "critical",
+        occurred: new Date().toISOString(),
+        request_id: ctx.state.requestId,
+        outcome: `${err.status || 500} ${err.message || 'Internal Server Error'}`,
+        entity: {
+          detail: {
+            method: ctx.request.method,
+            url: ctx.request.url.toString(),
+            error: String(err.stack || err),
+          }
+        }
+      }));
+    }
+
     ctx.response.status = err.status || 500;
 
     ctx.response.body = {
@@ -55,7 +85,18 @@ app.addEventListener('error', (evt) => {
     // See https://github.com/oakserver/oak/issues/387
     return;
   }
-  console.log('App', evt.type, '>', evt.message, '>', evt.error, '<<');
+  console.log(JSON.stringify({
+    severity: "error",
+    occurred: new Date().toISOString(),
+    request_id: evt.context?.state?.requestId,
+    entity: {
+      detail: {
+        type: evt.type,
+        message: String(evt.message),
+        error: String(evt.error),
+      }
+    }
+  }));
 });
 
 const port = env.PORT;

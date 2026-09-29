@@ -124,12 +124,18 @@ function applyLogFallbacks(logMessage: types.LogMessageSimple, defaults: Partial
   return {...defaults, ...logMessage};
 }
 
+function redactConfig(config: types.HealthLinkConfig): Record<string, unknown> {
+  const { passcode, ...rest } = config;
+  return { ...rest, passcode: passcode ? '[REDACTED]' : undefined };
+}
+
 function log(context: oak.Context, msg: types.LogMessageSimple) {  
   let logMessage: types.LogMessage = {
     version: "3.0",
     severity: "info",
     action: msg.action,
     occurred: new Date().toISOString(),
+    request_id: context.state.requestId,
     subject: context.state.auth?.sub,
     agent: {
       ip_address: context.request.ip,
@@ -158,6 +164,9 @@ function handleError(context: oak.Context, content: types.LogMessageSimple, stat
   content.severity = "error";
   content.outcome = `${status} ${message}`;
   log(context, content);
+  // Marks this failure as already audited so the top-level error handler
+  // in server.ts doesn't log it again when it re-catches the thrown error.
+  context.state.errorHandled = true;
   context.throw(status, message, props);
 }
 
@@ -227,6 +236,7 @@ router.post('/shl/:shlId', async (context) => {
     handleError(context, logMessage, 400, "Missing recipient in request body");
     return;
   }
+  logMessage.entity!.detail!.recipient = config.recipient;
 
   let shl: types.HealthLink | undefined = db.DbLinks.getShlInternal(context.params.shlId);
   if (shl === undefined || !shl?.active) {
@@ -298,6 +308,7 @@ router.post('/shl/:shlId', async (context) => {
         })),
       ) as types.SHLinkManifestEntry[],
   };
+  log(context, { ...logMessage, outcome: "200 OK" });
   return;
 });
 /** Request SHL file from manifest */
@@ -319,6 +330,7 @@ router.get('/shl/:shlId/file/:fileHash', (context) => {
   const file = db.DbLinks.getFileContent(context.params.shlId, context.params.fileHash);
   context.response.headers.set('content-type', 'application/jose');
   context.response.body = file.content;
+  log(context, { ...logMessage, outcome: "200 OK" });
   return;
 });
 /** Request SHL endpoint from manifest */
@@ -333,7 +345,6 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
   };
   const ticket = manifestAccessTickets.get(context.request.url.searchParams.get('ticket')!);
   if (!ticket || ticket.shlId !== context.params.shlId) {
-    console.log('Cannot request SHL without a valid ticket');
     handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
@@ -355,6 +366,7 @@ router.get('/shl/:shlId/endpoint/:endpointId', async (context) => {
     })
     .encrypt(jose.base64url.decode(endpoint.config.key));
   context.response.body = encrypted;
+  log(context, { ...logMessage, outcome: "200 OK" });
   return;
 });
 /** Check if SHL is active */
@@ -372,7 +384,8 @@ router.get('/shl/:shlId/active', (context) => {
     return;
   }
   const isActive = (shl && shl.active);
-  console.log(context.params.shlId + " active: " + isActive);
+  logMessage.entity!.detail!.active = String(isActive);
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.body = isActive;
   context.response.headers.set('content-type', 'application/json');
   return;
@@ -401,6 +414,34 @@ router.use(authMiddleware);
 /**
  * Endpoints behind JWT validation middleware when enabled
 */
+/** Accept a client-submitted log entry. Requires authentication to prevent audit-log injection. */
+router.post('/log', async (context: oak.Context) => {
+  const userId = context.state.auth?.sub;
+  const content: types.LogMessageSimple = await context.request.body({ type: 'json' }).value;
+  const logMessage: types.LogMessageSimple = {
+    action: "create",
+    subject: userId,
+    entity: { detail: {
+      action: "Post log message",
+    }}
+  };
+  if (!content.action) {
+    handleError(context, logMessage, 400, "Missing action in request body");
+    return;
+  }
+
+  let defaults: Partial<types.LogMessage> = {
+    subject: userId,
+    agent: { who: userId },
+    source: {
+      type: "external-client"
+    }
+  };
+  const contentWithFallbacks = applyLogFallbacks(content, defaults);
+  log(context, contentWithFallbacks);
+  context.response.status = 200;
+  return;
+});
 /**
  * TODO: Change to GET after committing to jwt auth
  * Current body required: { userId: string }
@@ -419,6 +460,7 @@ router.post('/authcheck', async (context: oak.Context) => {
     handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.headers.set('Content-Type', 'application/json');
   context.response.status = 200;
   context.response.body = { authorized: true };
@@ -426,12 +468,23 @@ router.post('/authcheck', async (context: oak.Context) => {
 });
 /** Get SHLs for user */
 router.post('/user', async (context: oak.Context) => {
-  const shls = db.DbLinks.getUserShls(context.state.auth.sub)!;
+  const userId = context.state.auth.sub;
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    subject: userId,
+    agent: { who: userId },
+    entity: { detail: {
+      action: `List shls for user '${userId}'`,
+    }}
+  };
+  const shls = db.DbLinks.getUserShls(userId)!;
   if (!shls) {
-    console.log(`No SHLinks for user ` + context.state.auth.sub);
+    logMessage.entity!.detail!.result = "No SHLinks for user";
+    log(context, { ...logMessage, outcome: "200 OK" });
     context.response.body = [];
     return;
   }
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.body = shls.map((shl) => {
     let shlink = createShlString(shl);
     let fullShl = prepareShlForReturn(shl);
@@ -450,7 +503,7 @@ router.post('/shl', async (context) => {
     agent: { who: userId },
     entity: { detail: {
       action: `Create shl`,
-      config: JSON.stringify(config),
+      config: JSON.stringify(redactConfig(config)),
     }}
   };
   let newLink: types.HealthLinkFull | undefined = undefined;
@@ -460,7 +513,8 @@ router.post('/shl', async (context) => {
     handleError(context, logMessage, 500, "Failed to create SHL");
     return;
   }
-  console.log("Created link " + newLink.id);
+  logMessage.entity!.detail!.shl = newLink.id;
+  log(context, { ...logMessage, outcome: "200 OK" });
   const shlinkBare = createShlString(newLink);
   context.response.headers.set('content-type', 'text/plain; charset=utf-8');
   context.response.body = shlinkBare;
@@ -478,7 +532,7 @@ router.put('/shl/:shlId', async (context) => {
     },
     entity: { detail: {
       action: `Update config for shl '${context.params.shlId}'`,
-      config: JSON.stringify(config),
+      config: JSON.stringify(redactConfig(config)),
     }}
   };
   if (!db.DbLinks.linkExists(context.params.shlId)) {
@@ -494,7 +548,12 @@ router.put('/shl/:shlId', async (context) => {
   shl.config.passcode = config.passcode ?? shl.config.passcode;
   shl.label = config.label ?? shl.label;
   const updated = db.DbLinks.updateConfig(shl);
+  if (!updated) {
+    handleError(context, logMessage, 500, "Failed to update SHL");
+    return;
+  }
   const updatedShl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.headers.set('content-type', 'application/json');
   context.response.body = prepareShlForReturn(updatedShl);
   return;
@@ -536,6 +595,7 @@ router.delete('/shl/:shlId', async (context) => {
       fullShl.shlink = shlink;
       return fullShl;
     });
+    log(context, { ...logMessage, outcome: "200 OK" });
   } catch {
     handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
     return;
@@ -562,7 +622,8 @@ router.put('/shl/:shlId/reactivate', async (context) => {
     return;
   }
   const success = db.DbLinks.reactivate(shl)!;
-  console.log("Reactivated " + context.params.shlId + ": " + success);
+  logMessage.entity!.detail!.success = String(success);
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.headers.set('content-type', 'application/json');
   context.response.body = success;
   return;
@@ -612,6 +673,12 @@ router.post('/shl/:shlId/file', async (context) => {
   };
 
   const added = await db.DbLinks.addFile(shl.id, newFile);
+  if (!added) {
+    handleError(context, logMessage, 500, "Failed to add file");
+    return;
+  }
+  logMessage.entity!.detail!.file = added;
+  log(context, { ...logMessage, outcome: "200 OK" });
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
   context.response.headers.set('content-type', 'application/json');
   context.response.body = prepareShlForReturn(updatedShl);
@@ -649,6 +716,7 @@ router.delete('/shl/:shlId/file', async (context) => {
     return;
   }
   const updatedShl = db.DbLinks.getUserShl(shl.id, userId)!;
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.headers.set('content-type', 'application/json');
   context.response.body = prepareShlForReturn(updatedShl);
   return;
@@ -680,7 +748,8 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   }
 
   const added = await db.DbLinks.addEndpoint(shl.id, config);
-  console.log("Added", added);
+  logMessage.entity!.detail!.endpoint = added;
+  log(context, { ...logMessage, outcome: "200 OK" });
   const updatedShl = db.DbLinks.getUserShl(context.params.shlId, userId)!;
   context.response.headers.set('content-type', 'application/json');
   context.response.body = prepareShlForReturn(updatedShl);
@@ -715,6 +784,7 @@ router.post('/subscribe', async (context) => {
   setTimeout(() => {
     subscriptionTickets.delete(ticket);
   }, 10000);
+  log(context, { ...logMessage, outcome: "200 OK" });
   context.response.body = { subscribe: `${env.PUBLIC_URL}/api/subscribe/${ticket}` };
   context.response.status = 200;
   return;
@@ -733,6 +803,7 @@ router.get('/subscribe/:ticket', (context) => {
     handleError(context, logMessage, 401, "Invalid ticket for SSE subscription");
     return;
   }
+  log(context, { ...logMessage, outcome: "200 OK" });
 
   const target = context.sendEvents();
   for (const shl of validForSet) {
@@ -810,7 +881,7 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
   // Test/development only
   if (isEnvFlagEnabled(Deno.env.get('TEST')) || isEnvFlagEnabled(Deno.env.get('DEV'))) {
     if (db.DbLinks.managementTokenExists(tokenValue)) {
-      console.log("Trying management token: " + tokenValue);
+      console.log("Trying management token");
       let mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
       if (mtUser) {
         context.state.auth = { sub: mtUser };
@@ -832,6 +903,14 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
       ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
     });
     context.state.auth = verifiedDecodedToken.payload;
+    
+    const subject = verifiedDecodedToken.payload.sub;
+    log(context, {
+      ...logMessage,
+      subject,
+      agent: { who: subject },
+      outcome: "200 OK",
+    });
 
     return next();
 
