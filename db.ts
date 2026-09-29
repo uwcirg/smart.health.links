@@ -106,8 +106,7 @@ export const DbLinks = {
     db.query(`INSERT INTO user (id, sub) values (:id, :sub)`, { id, sub });
     return id;
   },
-  create(config: types.HealthLinkConfig, userId: string): types.HealthLinkFull {
-    this.createUserIfNotExists(userId);
+  async create(config: types.HealthLinkConfig, userId: string): Promise<types.HealthLinkFull> {
     const link = {
       config,
       id: randomStringWithEntropy(32),
