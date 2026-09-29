@@ -1,3 +1,5 @@
+import { isEnvFlagEnabled } from './util.ts';
+
 interface Config {
   PUBLIC_URL: string;
   EMBEDDED_LENGTH_MAX: number;
@@ -7,6 +9,7 @@ interface Config {
   APP_VERSION_STRING?: string;
   PORT?: number;
   JWKS_URL?: string;
+  JWT_ISSUER?: string;
   DIR?: string;
   CORS_ALLOWED_ORIGINS?: string;
 };
@@ -21,6 +24,7 @@ const defaultEnv: Config = {
   APP_VERSION_STRING: "",
   PORT: port,
   JWKS_URL: "",
+  JWT_ISSUER: "",
   DIR: ".",
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: 30,
@@ -47,7 +51,7 @@ async function envOrDefault(variable: string, defaultValue: string | number) {
   }
   return typeof defaultValue === 'number' ? parseFloat(ret) : ret;
 }
-const fallback = Deno.env.get("TEST") ? testEnv : defaultEnv;
+const fallback = isEnvFlagEnabled(Deno.env.get("TEST")) ? testEnv : defaultEnv;
 const env = Object.fromEntries(
   await Promise.all(Object.entries(fallback).map(async ([k, v]) => [k, await envOrDefault(k, v)])),
 ) as typeof defaultEnv;
