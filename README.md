@@ -12,12 +12,21 @@ deno run --allow-env="PORT","PUBLIC_URL","EMBEDDED_LENGTH_MAX" --allow-read=".",
 # Test
 
 ```sh
-deno test --allow-env --allow-read=".","./db" --allow-write="./db" --allow-net
+TEST=1 deno test --allow-env --allow-read=".","./db","./tests" --allow-write="./db","./tests" --allow-net tests/api.test.ts
 ```
 
 # Configuration
 
-POST requests (including `/authcheck`) are rate limited per client IP. Defaults to 30 requests per 60 second window; override with `RATE_LIMIT_MAX_REQUESTS` and `RATE_LIMIT_WINDOW_MS`. The server trusts `X-Forwarded-For` from its reverse proxy to identify clients, so it must always run behind one (see `k8s.yml` / `docker-compose.traefik-ingress.yaml`).
+Server configuration is set via environment variables (see `default.server.env` for the full list).
+
+For production-like deployments, set `CORS_ALLOWED_ORIGINS` to a comma-separated list of allowed origins to restrict cross-origin requests, eg:
+```
+CORS_ALLOWED_ORIGINS=https://app.example.org,https://admin.example.org
+```
+Leave it unset for local development to reflect any origin.
+
+POST requests (including `/authcheck`) are rate limited per client IP.
+Override with `RATE_LIMIT_MAX_REQUESTS` and `RATE_LIMIT_WINDOW_MS`.
 
 # Build in Docker
 

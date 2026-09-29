@@ -2,12 +2,13 @@ interface Config {
   PUBLIC_URL: string;
   EMBEDDED_LENGTH_MAX: number;
   FILE_SIZE_MAX: number;
+  RATE_LIMIT_WINDOW_MS: number;
+  RATE_LIMIT_MAX_REQUESTS: number;
   APP_VERSION_STRING?: string;
   PORT?: number;
   JWKS_URL?: string;
   DIR?: string;
-  RATE_LIMIT_WINDOW_MS: number;
-  RATE_LIMIT_MAX_REQUESTS: number;
+  CORS_ALLOWED_ORIGINS?: string;
 };
 
 const port = Number(Deno.env.get("PORT") || 8000);
@@ -23,6 +24,7 @@ const defaultEnv: Config = {
   DIR: ".",
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: 30,
+  CORS_ALLOWED_ORIGINS: "",
 };
 
 const testEnv: Config = {
