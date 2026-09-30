@@ -309,7 +309,7 @@ Deno.test({
         { passcode: 'wrong', recipient: 'attacker' }
       );
       const manifestContent = await manifestResponse.json();
-      assertions.assertEquals(manifestResponse.status, 429);
+      assertions.assertEquals(manifestResponse.status, 403);
       assertions.assertExists(manifestContent.details.retryAfterSeconds);
       assertions.assertExists(manifestContent.details.lockedUntil);
       assertions.assertEquals(
@@ -323,7 +323,7 @@ Deno.test({
         shl.id,
         { passcode, recipient: 'attacker' }
       );
-      assertions.assertEquals(manifestResponse.status, 429);
+      assertions.assertEquals(manifestResponse.status, 403);
     });
   },
   sanitizeOps: false,
