@@ -774,6 +774,33 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   context.response.body = prepareShlForReturn(updatedShl);
   return;
 });
+/** Get recent history events for SHL */
+router.get('/shl/:shlId/history', async (context) => {
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
+  const limit = Math.min(Math.max(Number(context.request.url.searchParams.get('limit')) || 10, 1), 100);
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: sub
+    },
+    entity: { detail: {
+      action: `Get history for shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+    }}
+  };
+  const shl = (await db.DbLinks.getUserShlInternal(context.params.shlId, userId))!;
+  if (!shl) {
+    handleError(context, logMessage, 401, "Unauthorized");
+    return;
+  }
+  const history = db.DbLinks.getRecentEvents(context.params.shlId, limit);
+  log(context, { ...logMessage, outcome: "200 OK" });
+  context.response.headers.set('content-type', 'application/json');
+  context.response.body = history;
+  return;
+});
 /** Subscribe to SHLs related to their management tokens */
 router.post('/subscribe', async (context) => {
   const sub = context.state.auth.sub;
