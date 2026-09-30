@@ -187,7 +187,7 @@ function denyForLockout(context: oak.Context, content: types.LogMessageSimple, l
   context.response.headers.set('Retry-After', String(retryAfterSeconds));
   content.entity!.detail!.lockoutLevel = String(lockout.level);
   content.entity!.detail!.lockedUntil = lockedUntil;
-  handleError(context, content, 429, "Too many incorrect passcode attempts. Try again later.", {
+  handleError(context, content, 403, "Too many incorrect passcode attempts. Try again later.", {
     details: { retryAfterSeconds, lockedUntil },
   });
 }
@@ -265,7 +265,7 @@ router.post('/shl/:shlId', async (context) => {
       denyForLockout(context, logMessage, lockout);
       return;
     }
-    if (!("passcode" in config)) {
+    if (!("passcode" in config) || config.passcode === "" || config.passcode === undefined) {
       const failureCount = countPasscodeFailures(ip, shl.id);
       handleError(context, logMessage, 401, "Passcode required", {
         details: {
