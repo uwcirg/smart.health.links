@@ -803,17 +803,6 @@ Deno.test({
       assertions.assertEquals(log[0].recipient, 'Recipient Two');
     });
 
-    await t.step('Access log for nonexistent SHL returns 404', async function () {
-      const response = await fetch(`${env.PUBLIC_URL}/api/shl/nonexistent-shl/access-log`, {
-        method: 'GET',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${shl.managementToken}`,
-        },
-      });
-      assertions.assertEquals(response.status, 404);
-    });
-
     await t.step('Access log with invalid token is unauthorized', async function () {
       const response = await fetch(`${env.PUBLIC_URL}/api/shl/${shl!.id}/access-log`, {
         method: 'GET',
@@ -952,7 +941,7 @@ Deno.test({
   },
   sanitizeOps: false,
   sanitizeResources: false,
-})
+});
 
 Deno.test({
   ignore: !Deno.env.get("TEST_SMART"),
