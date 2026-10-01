@@ -150,6 +150,7 @@ export interface shlink_access_log {
   shlink?: string;
   recipient?: string;
   access_time?: string;
+  ip_address?: string;
 }
 
 type Action = 'create' | 'read' | 'update' | 'delete' | 'execute' | 'login' | 'logout';

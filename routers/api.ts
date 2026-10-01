@@ -301,7 +301,7 @@ router.post('/shl/:shlId', async (context) => {
   setTimeout(() => {
     manifestAccessTickets.delete(ticket);
   }, 60000);
-  db.DbLinks.recordAccess(shl.id, config.recipient);
+  db.DbLinks.recordAccess(shl.id, config.recipient, context.request.ip);
 
   context.response.headers.set('expires', new Date().toUTCString());
   context.response.headers.set('content-type', 'application/json');

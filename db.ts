@@ -619,10 +619,10 @@ export const DbLinks = {
       contentHash: f.content_hash,
     } as types.FileSummary));
   },
-  recordAccess(shlId: string, recipient: string) {
-    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient) values (?, ?)`);
+  recordAccess(shlId: string, recipient: string, ipAddress: string) {
+    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient, ip_address) values (?, ?, ?)`);
     try {
-      q.execute([shlId, recipient]);
+      q.execute([shlId, recipient, ipAddress]);
     } finally {
       q.finalize();
     }
