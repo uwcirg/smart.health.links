@@ -95,6 +95,29 @@ async function updateAccessToken(endpoint: types.HealthLinkEndpointContent) {
   return updatedEndpoint;
 }
 
+function logEvent(shlink: string, eventType: types.ShlinkEventType, detail?: string) {
+  db.query(
+    `insert into shlink_event(shlink, event_type, detail) values (:shlink, :eventType, :detail)`,
+    { shlink, eventType, detail: detail ?? null },
+  );
+}
+
+/** Logs an 'expired' event the first time an SHL is read after its exp has
+ * passed. There's no background sweep, so this is only as timely as the
+ * next read of the shlink (manifest request, active check, dashboard, etc.) */
+function recordExpirationIfPassed(shlink: string, exp?: number | null) {
+  if (exp === undefined || exp === null) return;
+  if (exp * 1000 >= Date.now()) return;
+  db.query(
+    `insert into shlink_event(shlink, event_type)
+      select :shlink, 'expired'
+      where not exists (
+        select 1 from shlink_event where shlink=:shlink and event_type='expired'
+      )`,
+    { shlink },
+  );
+}
+
 export const DbLinks = {
   /** Looks up the internal user id for an IdP `sub` claim, creating a new
    * proxy-id'd user row on first sight. `sub` is never used as a foreign key. */
@@ -157,6 +180,8 @@ export const DbLinks = {
       },
     );
 
+    logEvent(link.id, 'created');
+
     return {
       id: link_public.id as string,
       url: link_public.manifestUrl as string,
@@ -192,19 +217,28 @@ export const DbLinks = {
   },
   async updateConfig(shl: types.HealthLinkFull) {
     let pub: types.shlink_public;
-    const query = db.prepareQuery(`SELECT * from shlink_public where shlink=?`);
+    let access: types.shlink_access;
+    const pubQuery = db.prepareQuery(`SELECT * from shlink_public where shlink=?`);
+    const accessQuery = db.prepareQuery(`SELECT * from shlink_access where id=?`);
     try {
-      pub = query.oneEntry([shl.id]);
+      pub = pubQuery.oneEntry([shl.id]);
+      access = accessQuery.oneEntry([shl.id]);
     } catch (e) {
       return undefined;
     } finally {
-      query.finalize();
+      pubQuery.finalize();
+      accessQuery.finalize();
     }
 
     let newFlag = pub.flag;
     if (!pub.flag?.includes('P')) {
       newFlag = pub.flag + 'P';
     }
+    const oldPasscode = access.config_passcode ? await decryptSecret(access.config_passcode as string) : undefined;
+    const passcodeChanged = shl.config.passcode !== oldPasscode;
+    const expChanged = (shl.config.exp ?? undefined) !== (access.config_exp ?? undefined);
+    const labelChanged = (shl.label ?? undefined) !== (pub.label ?? undefined);
+
     const encryptedPasscode = shl.config.passcode !== undefined ? await encryptSecret(shl.config.passcode) : undefined;
     db.transaction(() => {
       db.query(
@@ -223,12 +257,17 @@ export const DbLinks = {
           passcode: encryptedPasscode
         }
       );
+      // Passcode value itself is never logged.
+      if (passcodeChanged) logEvent(shl.id, 'updated_passcode');
+      if (expChanged) logEvent(shl.id, 'updated_expiration', shl.config.exp !== undefined ? String(shl.config.exp) : undefined);
+      if (labelChanged) logEvent(shl.id, 'updated_label', shl.label);
     });
     return true;
   },
   deactivate(shl: types.HealthLink) {
     try {
       db.query(`UPDATE shlink_access set active=false where id=?`, [shl.id]);
+      logEvent(shl.id, 'deactivated');
     } catch (e) {
       return false;
     }
@@ -236,6 +275,7 @@ export const DbLinks = {
   },
   reactivate(shl: types.HealthLink): boolean {
     db.query(`UPDATE shlink_access set active=true where id=?`, [shl.id]);
+    logEvent(shl.id, 'reactivated');
     return true;
   },
   linkExists(linkId: string): boolean {
@@ -274,6 +314,7 @@ export const DbLinks = {
     } finally {
       query.finalize();
     }
+    recordExpirationIfPassed(linkRow.id as string, linkRow.config_exp as number | undefined);
     return {
       id: linkRow.id as string,
       active: Boolean(linkRow.active) as boolean,
@@ -298,6 +339,7 @@ export const DbLinks = {
       userQuery.finalize();
       linkQuery.finalize();
     }
+    recordExpirationIfPassed(linkRow.id as string, linkRow.config_exp as number | undefined);
     return {
       id: linkRow.id as string,
       active: Boolean(linkRow.active) as boolean,
@@ -318,6 +360,7 @@ export const DbLinks = {
     } finally {
       query.finalize();
     }
+    recordExpirationIfPassed(linkRow.id as string, linkRow.config_exp as number | undefined);
     return {
       id: linkRow.id as string,
       active: Boolean(linkRow.active) as boolean,
@@ -367,6 +410,7 @@ export const DbLinks = {
     } finally {
       query.finalize();
     }
+    recordExpirationIfPassed(row.shlink as string, row.config_exp as number | undefined);
     return {
       id: row.shlink as string,
       url: row.manifest_url as string,
@@ -403,6 +447,9 @@ export const DbLinks = {
       rows = query.allEntries([userId]) as Array<types.shlink_access & types.shlink_public>;
     } finally {
       query.finalize();
+    }
+    for (const row of rows) {
+      recordExpirationIfPassed(row.shlink as string, row.config_exp as number | undefined);
     }
     const userPubShls: Array<types.HealthLinkFull> = await Promise.all(
       rows.map(async (row) => ({
@@ -444,6 +491,8 @@ export const DbLinks = {
             hashEncoded,
           },
         );
+
+        logEvent(linkId, 'file_added', hashEncoded);
       });
     } catch (e) {
       console.error(JSON.stringify({
@@ -458,13 +507,17 @@ export const DbLinks = {
   },
   async deleteFile(linkId: string, content: string) : Promise<boolean> {
     // Soft delete
-    db.query(
-      `delete from shlink_file where shlink = :linkId and content_hash = :content`,
-      {
-        linkId,
-        content,
-      }
-    );
+    db.transaction(() => {
+      db.query(
+        `delete from shlink_file where shlink = :linkId and content_hash = :content`,
+        {
+          linkId,
+          content,
+        }
+      );
+
+      logEvent(linkId, 'file_deleted', content);
+    });
     // Hard delete
     // db.query(`delete from cas_item where hash = :hashEncoded and content = :content`,
     // {
@@ -631,5 +684,21 @@ export const DbLinks = {
       shlId,
       recipient,
     });
+  },
+  /** Most recent lifecycle events for an SHL (newest first), for clients to display as history. */
+  getRecentEvents(shlId: string, limit: number = 10): types.ShlinkEventSummary[] {
+    const events = db.queryEntries<types.shlink_event>(
+      `select event_type, event_time, detail
+      from shlink_event
+      where shlink=?
+      order by event_time desc, rowid desc
+      limit ?`,
+      [shlId, limit],
+    );
+    return events.map((e: types.shlink_event) => ({
+      eventType: e.event_type as types.ShlinkEventType,
+      time: e.event_time as string,
+      detail: e.detail as string | undefined,
+    }));
   },
 };
