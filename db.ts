@@ -634,7 +634,7 @@ export const DbLinks = {
   },
   getAccessLog(shlId: string, limit: number): types.AccessLogEntry[] {
     const entries = db.queryEntries<types.shlink_access_log>(
-      `select recipient, access_time, ip_address from shlink_access_log where shlink=? order by access_time desc limit ?`,
+      `select recipient, access_time, ip_address from shlink_access_log where shlink=? order by rowid desc limit ?`,
       [shlId, limit],
     );
     return entries.map((e) => ({
