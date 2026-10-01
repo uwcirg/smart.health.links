@@ -11,6 +11,19 @@ const dir = env.DIR || '.';
 
 let db = await initializeDb();
 
+/**
+ * Normalize a stored timestamp to ISO-8601 UTC. SQLite's DATETIME('now') yields
+ * 'YYYY-MM-DD HH:MM:SS' (UTC, no marker), which JS would otherwise parse as local time.
+ * Values already written via toISOString() pass through unchanged.
+ */
+function toIsoUtc(value: string): string;
+function toIsoUtc(value: string | undefined | null): string | undefined;
+function toIsoUtc(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  if (/(Z|[+-]\d{2}:?\d{2})$/i.test(value)) return value;
+  return value.replace(' ', 'T') + 'Z';
+}
+
 export async function initializeDb() {
   try {
     await fs.ensureDir(dir + '/db');
@@ -612,7 +625,7 @@ export const DbLinks = {
           refreshToken: endpointRow.config_refresh_token,
           tokenEndpoint: endpointRow.config_token_endpoint,
         },
-        refreshTime: endpointRow.refresh_time,
+        refreshTime: toIsoUtc(endpointRow.refresh_time),
         accessTokenResponse: JSON.parse(endpointRow.access_token_response),
       };
 
@@ -667,7 +680,7 @@ export const DbLinks = {
     if (!files.length) return [];
     return files.map((f) => ({
       label: f.label,
-      added: f.added_time,
+      added: toIsoUtc(f.added_time as string),
       contentType: f.content_type,
       contentHash: f.content_hash,
     } as types.FileSummary));
@@ -692,7 +705,7 @@ export const DbLinks = {
     );
     return entries.map((e: types.shlink_access_log) => ({
       recipient: e.recipient,
-      accessTime: e.access_time,
+      accessTime: toIsoUtc(e.access_time),
       ipAddress: e.ip_address,
     } as types.AccessLogEntry));
   },
@@ -708,7 +721,7 @@ export const DbLinks = {
     );
     return events.map((e: types.shlink_event) => ({
       eventType: e.event_type,
-      time: e.event_time,
+      time: toIsoUtc(e.event_time),
       detail: e.detail,
     } as types.EventLogEntry));
   },
