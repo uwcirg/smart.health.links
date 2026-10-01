@@ -788,7 +788,7 @@ router.get('/shl/:shlId/access-log', async (context) => {
     },
     entity: {
       detail: {
-        action: `Read access log for shl '${context.params.shlId}; limit ${limit}'`,
+        action: `Read access log for shl '${context.params.shlId}', limit ${limit}`,
         shl: context.params.shlId,
       }
     }
@@ -817,7 +817,7 @@ router.get('/shl/:shlId/history', async (context) => {
       who: sub
     },
     entity: { detail: {
-      action: `Get history for shl '${context.params.shlId}; limit ${limit}'`,
+      action: `Get history for shl '${context.params.shlId}', limit ${limit}`,
       shl: context.params.shlId,
     }}
   };
