@@ -40,6 +40,12 @@ export interface AccessLogEntry {
   ipAddress?: string;
 }
 
+export interface EventLogEntry {
+  eventType: ShlinkEventType;
+  time: string;
+  detail: string | undefined;
+}
+
 // All data relating to an SHL, including public fields, internal access criteria, and files
 export interface HealthLinkFull extends SHLDecoded, HealthLink {
   files: FileSummary[];

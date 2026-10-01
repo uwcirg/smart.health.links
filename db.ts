@@ -690,7 +690,7 @@ export const DbLinks = {
       `select recipient, access_time, ip_address from shlink_access_log where shlink=? order by rowid desc limit ?`,
       [shlId, limit],
     );
-    return entries.map((e) => ({
+    return entries.map((e: types.shlink_access_log) => ({
       recipient: e.recipient,
       accessTime: e.access_time,
       ipAddress: e.ip_address,
@@ -707,9 +707,9 @@ export const DbLinks = {
       [shlId, limit],
     );
     return events.map((e: types.shlink_event) => ({
-      eventType: e.event_type as types.ShlinkEventType,
-      time: e.event_time as string,
-      detail: e.detail as string | undefined,
-    }));
+      eventType: e.event_type,
+      time: e.event_time,
+      detail: e.detail,
+    } as types.EventLogEntry));
   },
 };
