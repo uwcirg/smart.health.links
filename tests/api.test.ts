@@ -137,6 +137,18 @@ async function getHistory(shlId: string, managementToken: string, limit?: number
   });
 }
 
+async function getAccessLog(shlId: string, managementToken: string, limit?: number) {
+  const url = new URL(`${env.PUBLIC_URL}/api/shl/${shlId}/access-log`);
+  if (limit !== undefined) url.searchParams.set('limit', String(limit));
+  return await fetch(url, {
+    method: 'GET',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${managementToken}`,
+    },
+  });
+}
+
 Deno.test({
   name: 'Create SHL',
   async fn(t) {
@@ -746,6 +758,63 @@ Deno.test({
 })
 
 Deno.test({
+  name: 'Access log endpoint',
+  async fn(t) {
+    const userId = randomStringWithEntropy(32);
+    await initializeTest(userId, { passcode: '1234' });
+    const shl = getUserSHL(userId);
+
+    await t.step('Access log is empty before any manifest requests', async function () {
+      const response = await getAccessLog(shl.id, shl.managementToken);
+      assertions.assertEquals(response.status, 200);
+      const log = await response.json();
+      assertions.assertEquals(log.length, 0);
+    });
+
+    await t.step('Record manifest accesses', async function () {
+      const first = await getManifest(shl!.id, { passcode: '1234', recipient: 'Recipient One' });
+      assertions.assertEquals(first.status, 200);
+      const second = await getManifest(shl!.id, { passcode: '1234', recipient: 'Recipient Two' });
+      assertions.assertEquals(second.status, 200);
+    });
+
+    await t.step('Access log reflects accesses, most recent first', async function () {
+      const response = await getAccessLog(shl.id, shl.managementToken);
+      assertions.assertEquals(response.status, 200);
+      const log: types.AccessLogEntry[] = await response.json();
+      assertions.assertEquals(log.length, 2);
+      assertions.assertEquals(log[0].recipient, 'Recipient Two');
+      assertions.assertEquals(log[1].recipient, 'Recipient One');
+      assertions.assertExists(log[0].accessTime);
+      assertions.assertEquals(log[0].ipAddress, '127.0.0.1');
+    });
+
+    await t.step('Access log respects limit query param', async function () {
+      const response = await getAccessLog(shl.id, shl.managementToken, 1);
+      assertions.assertEquals(response.status, 200);
+      const log: types.AccessLogEntry[] = await response.json();
+      assertions.assertEquals(log.length, 1);
+      assertions.assertEquals(log[0].recipient, 'Recipient Two');
+    });
+
+    await t.step('Access log with invalid token is unauthorized', async function () {
+      const response = await getAccessLog(shl.id, 'bad-token');
+      assertions.assertEquals(response.status, 401);
+    });
+
+    await t.step('Access log for SHL owned by another user is unauthorized', async function () {
+      const otherUserId = randomStringWithEntropy(32);
+      await initializeTest(otherUserId, { passcode: '1234' });
+      const otherShl = getUserSHL(otherUserId);
+      const response = await getAccessLog(shl.id, otherShl.managementToken);
+      assertions.assertEquals(response.status, 401);
+    });
+  },
+  sanitizeOps: false,
+  sanitizeResources: false,
+});
+
+Deno.test({
   name: 'SHL History Interactions',
   async fn(t) {
     const userId = randomStringWithEntropy(32);
@@ -854,7 +923,7 @@ Deno.test({
   },
   sanitizeOps: false,
   sanitizeResources: false,
-})
+});
 
 Deno.test({
   ignore: !Deno.env.get("TEST_SMART"),

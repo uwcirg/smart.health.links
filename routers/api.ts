@@ -301,7 +301,7 @@ router.post('/shl/:shlId', async (context) => {
   setTimeout(() => {
     manifestAccessTickets.delete(ticket);
   }, 60000);
-  db.DbLinks.recordAccess(shl.id, config.recipient);
+  db.DbLinks.recordAccess(shl.id, config.recipient, context.request.ip);
 
   context.response.headers.set('expires', new Date().toUTCString());
   context.response.headers.set('content-type', 'application/json');
@@ -774,11 +774,42 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   context.response.body = prepareShlForReturn(updatedShl);
   return;
 });
+/** Get the most recent access history entries for an SHL */
+router.get('/shl/:shlId/access-log', async (context) => {
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
+  const limitParam = Number(context.request.url.searchParams.get('limit'));
+  const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 10;
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: sub
+    },
+    entity: {
+      detail: {
+        action: `Read access log for shl '${context.params.shlId}', limit ${limit}`,
+        shl: context.params.shlId,
+      }
+    }
+  };
+  const shl = (await db.DbLinks.getUserShlInternal(context.params.shlId, userId))!;
+  if (!shl) {
+    handleError(context, logMessage, 401, "Unauthorized");
+    return;
+  }
+  const accessLog = db.DbLinks.getAccessLog(shl.id, limit);
+  log(context, { ...logMessage, outcome: "200 OK" });
+  context.response.headers.set('content-type', 'application/json');
+  context.response.body = accessLog;
+  return;
+});
 /** Get recent history events for SHL */
 router.get('/shl/:shlId/history', async (context) => {
   const sub = context.state.auth.sub;
   const userId = getAuthenticatedUserId(context);
-  const limit = Math.min(Math.max(Number(context.request.url.searchParams.get('limit')) || 10, 1), 100);
+  const limitParam = Number(context.request.url.searchParams.get('limit'));
+  const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 10;
   const logMessage: types.LogMessageSimple = {
     action: "read",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
@@ -786,7 +817,7 @@ router.get('/shl/:shlId/history', async (context) => {
       who: sub
     },
     entity: { detail: {
-      action: `Get history for shl '${context.params.shlId}'`,
+      action: `Get history for shl '${context.params.shlId}', limit ${limit}`,
       shl: context.params.shlId,
     }}
   };
@@ -795,7 +826,7 @@ router.get('/shl/:shlId/history', async (context) => {
     handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
-  const history = db.DbLinks.getRecentEvents(context.params.shlId, limit);
+  const history = db.DbLinks.getRecentEvents(shl.id, limit);
   log(context, { ...logMessage, outcome: "200 OK" });
   context.response.headers.set('content-type', 'application/json');
   context.response.body = history;

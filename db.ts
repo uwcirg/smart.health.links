@@ -672,10 +672,10 @@ export const DbLinks = {
       contentHash: f.content_hash,
     } as types.FileSummary));
   },
-  recordAccess(shlId: string, recipient: string) {
-    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient) values (?, ?)`);
+  recordAccess(shlId: string, recipient: string, ipAddress: string) {
+    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient, ip_address) values (?, ?, ?)`);
     try {
-      q.execute([shlId, recipient]);
+      q.execute([shlId, recipient, ipAddress]);
     } finally {
       q.finalize();
     }
@@ -684,6 +684,17 @@ export const DbLinks = {
       shlId,
       recipient,
     });
+  },
+  getAccessLog(shlId: string, limit: number): types.AccessLogEntry[] {
+    const entries = db.queryEntries<types.shlink_access_log>(
+      `select recipient, access_time, ip_address from shlink_access_log where shlink=? order by rowid desc limit ?`,
+      [shlId, limit],
+    );
+    return entries.map((e) => ({
+      recipient: e.recipient,
+      accessTime: e.access_time,
+      ipAddress: e.ip_address,
+    } as types.AccessLogEntry));
   },
   /** Most recent lifecycle events for an SHL (newest first), for clients to display as history. */
   getRecentEvents(shlId: string, limit: number = 10): types.ShlinkEventSummary[] {
