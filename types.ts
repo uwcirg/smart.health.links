@@ -33,6 +33,13 @@ export interface FileSummary {
   contentHash: string;
 }
 
+// Entry in an SHL's access history
+export interface AccessLogEntry {
+  recipient: string;
+  accessTime: string;
+  ipAddress?: string;
+}
+
 // All data relating to an SHL, including public fields, internal access criteria, and files
 export interface HealthLinkFull extends SHLDecoded, HealthLink {
   files: FileSummary[];

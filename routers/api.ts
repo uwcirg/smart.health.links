@@ -774,6 +774,38 @@ router.post('/shl/:shlId/endpoint', async (context) => {
   context.response.body = prepareShlForReturn(updatedShl);
   return;
 });
+/** Get the most recent access history entries for an SHL */
+router.get('/shl/:shlId/access-log', async (context) => {
+  const sub = context.state.auth.sub;
+  const userId = getAuthenticatedUserId(context);
+  const logMessage: types.LogMessageSimple = {
+    action: "read",
+    subject: db.DbLinks.getShlOwner(context.params.shlId),
+    agent: {
+      who: sub
+    },
+    entity: { detail: {
+      action: `Read access log for shl '${context.params.shlId}'`,
+      shl: context.params.shlId,
+    }}
+  };
+  if (!db.DbLinks.linkExists(context.params.shlId)) {
+    handleError(context, logMessage, 404, "SHL does not exist or has been deactivated.");
+    return;
+  }
+  const shl = (await db.DbLinks.getUserShlInternal(context.params.shlId, userId))!;
+  if (!shl) {
+    handleError(context, logMessage, 401, "Unauthorized");
+    return;
+  }
+  const limitParam = Number(context.request.url.searchParams.get('limit'));
+  const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 10;
+  const accessLog = db.DbLinks.getAccessLog(shl.id, limit);
+  log(context, { ...logMessage, outcome: "200 OK" });
+  context.response.headers.set('content-type', 'application/json');
+  context.response.body = accessLog;
+  return;
+});
 /** Subscribe to SHLs related to their management tokens */
 router.post('/subscribe', async (context) => {
   const sub = context.state.auth.sub;

@@ -632,4 +632,15 @@ export const DbLinks = {
       recipient,
     });
   },
+  getAccessLog(shlId: string, limit: number): types.AccessLogEntry[] {
+    const entries = db.queryEntries<types.shlink_access_log>(
+      `select recipient, access_time, ip_address from shlink_access_log where shlink=? order by access_time desc limit ?`,
+      [shlId, limit],
+    );
+    return entries.map((e) => ({
+      recipient: e.recipient,
+      accessTime: e.access_time,
+      ipAddress: e.ip_address,
+    } as types.AccessLogEntry));
+  },
 };
