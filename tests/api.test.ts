@@ -125,6 +125,18 @@ async function getManifest(id: string, body: types.HealthLinkManifestRequest) {
   return manifestResponse;
 }
 
+async function getHistory(shlId: string, managementToken: string, limit?: number) {
+  const url = new URL(`${env.PUBLIC_URL}/api/shl/${shlId}/history`);
+  if (limit !== undefined) url.searchParams.set('limit', String(limit));
+  return await fetch(url, {
+    method: 'GET',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${managementToken}`,
+    },
+  });
+}
+
 Deno.test({
   name: 'Create SHL',
   async fn(t) {
@@ -764,7 +776,7 @@ Deno.test({
       const response = await fetch(`${env.PUBLIC_URL}/api/shl/${shl!.id}/access-log`, {
         method: 'GET',
         headers: {
-          'content-type': 'application/json',
+        'content-type': 'application/json',
           authorization: `Bearer ${shl.managementToken}`,
         },
       });
@@ -825,6 +837,107 @@ Deno.test({
         },
       });
       assertions.assertEquals(response.status, 401);
+    });
+  },
+  sanitizeOps: false,
+  sanitizeResources: false,
+});
+
+Deno.test({
+  name: 'SHL History Interactions',
+  async fn(t) {
+    const userId = randomStringWithEntropy(32);
+    const passcode = '1234';
+    await initializeTest(userId, { passcode, label: 'History SHL' });
+    const shl = getUserSHL(userId);
+
+    await t.step('History includes creation and initial file add, newest first', async function () {
+      const historyResponse = await getHistory(shl.id, shl.managementToken);
+      assertions.assertEquals(historyResponse.status, 200);
+      const history = await historyResponse.json() as types.ShlinkEventSummary[];
+      assertions.assertEquals(history.length, 2);
+      assertions.assertEquals(history[0].eventType, 'file_added');
+      assertions.assertExists(history[0].detail);
+      assertions.assertEquals(history[1].eventType, 'created');
+      assertions.assertEquals(history[1].detail, null);
+    });
+
+    await t.step('Limit parameter caps the number of entries returned', async function () {
+      const historyResponse = await getHistory(shl.id, shl.managementToken, 1);
+      assertions.assertEquals(historyResponse.status, 200);
+      const history = await historyResponse.json() as types.ShlinkEventSummary[];
+      assertions.assertEquals(history.length, 1);
+      assertions.assertEquals(history[0].eventType, 'file_added');
+    });
+
+    await t.step('Changing the label logs only updated_label', async function () {
+      const putResponse = await fetch(`${env.PUBLIC_URL}/api/shl/${shl!.id}`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${shl.managementToken}`,
+        },
+        body: JSON.stringify({ label: 'New History Label' }),
+      });
+      assertions.assertEquals(putResponse.status, 200);
+
+      const historyResponse = await getHistory(shl.id, shl.managementToken);
+      const history = await historyResponse.json() as types.ShlinkEventSummary[];
+      assertions.assertEquals(history[0].eventType, 'updated_label');
+      assertions.assertEquals(history[0].detail, 'New History Label');
+    });
+
+    await t.step('Changing the passcode logs updated_passcode without leaking the value', async function () {
+      const putResponse = await fetch(`${env.PUBLIC_URL}/api/shl/${shl!.id}`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${shl.managementToken}`,
+        },
+        body: JSON.stringify({ passcode: 'new-passcode' }),
+      });
+      assertions.assertEquals(putResponse.status, 200);
+
+      const historyResponse = await getHistory(shl.id, shl.managementToken);
+      const history = await historyResponse.json() as types.ShlinkEventSummary[];
+      assertions.assertEquals(history[0].eventType, 'updated_passcode');
+      assertions.assert(!history[0].detail);
+      assertions.assert(JSON.stringify(history).indexOf('new-passcode') === -1);
+    });
+
+    await t.step('Deactivating and reactivating are both logged', async function () {
+      const deactivateResponse = await fetch(`${env.PUBLIC_URL}/api/shl/${shl!.id}`, {
+        method: 'DELETE',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${shl.managementToken}`,
+        },
+      });
+      assertions.assertEquals(deactivateResponse.status, 200);
+
+      const reactivateResponse = await fetch(`${env.PUBLIC_URL}/api/shl/${shl!.id}/reactivate`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${shl.managementToken}`,
+        },
+      });
+      assertions.assertEquals(reactivateResponse.status, 200);
+
+      const historyResponse = await getHistory(shl.id, shl.managementToken);
+      const history = await historyResponse.json() as types.ShlinkEventSummary[];
+      assertions.assertEquals(history[0].eventType, 'reactivated');
+      assertions.assertEquals(history[1].eventType, 'deactivated');
+    });
+
+    await t.step('History for nonexistent SHL is unauthorized', async function () {
+      const historyResponse = await getHistory('nonexistent-shl-id', shl.managementToken);
+      assertions.assertEquals(historyResponse.status, 401);
+    });
+
+    await t.step('History with bad management token is unauthorized', async function () {
+      const historyResponse = await getHistory(shl.id, 'bad-token');
+      assertions.assertEquals(historyResponse.status, 401);
     });
   },
   sanitizeOps: false,

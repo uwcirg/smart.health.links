@@ -160,6 +160,36 @@ export interface shlink_access_log {
   ip_address?: string;
 }
 
+export type ShlinkEventType =
+  | 'created'
+  | 'updated_passcode'
+  | 'updated_expiration'
+  | 'updated_label'
+  | 'expired'
+  | 'deactivated'
+  | 'reactivated'
+  | 'file_added'
+  | 'file_deleted'
+  | 'file_updated'
+  | 'endpoint_added'
+  | 'endpoint_deleted'
+  | 'endpoint_updated';
+
+export interface shlink_event {
+  [key: string]: unknown;
+  shlink?: string;
+  event_type?: ShlinkEventType;
+  event_time?: string;
+  detail?: string;
+}
+
+// Single entry returned to clients for an SHL's event history
+export interface ShlinkEventSummary {
+  eventType: ShlinkEventType;
+  time: string;
+  detail?: string;
+}
+
 type Action = 'create' | 'read' | 'update' | 'delete' | 'execute' | 'login' | 'logout';
 type Severity = 'critical' | 'error' | 'warning' | 'info' | 'debug';
 
