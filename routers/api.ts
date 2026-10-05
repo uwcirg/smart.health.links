@@ -784,6 +784,7 @@ router.get('/shl/:shlId/access-log', async (context) => {
   const userId = getAuthenticatedUserId(context);
   const limitParam = Number(context.request.url.searchParams.get('limit'));
   const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 10;
+  const viewer = context.request.url.searchParams.get('viewer') ?? 'all';
   const logMessage: types.LogMessageSimple = {
     action: "read",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
@@ -792,17 +793,21 @@ router.get('/shl/:shlId/access-log', async (context) => {
     },
     entity: {
       detail: {
-        action: `Read access log for shl '${context.params.shlId}', limit ${limit}`,
+        action: `Read access log for shl '${context.params.shlId}', limit ${limit}, viewer ${viewer}`,
         shl: context.params.shlId,
       }
     }
   };
+  if (!types.ACCESS_LOG_VIEWER_FILTERS.includes(viewer as types.AccessLogViewerFilter)) {
+    handleError(context, logMessage, 400, `Invalid viewer filter; expected one of: ${types.ACCESS_LOG_VIEWER_FILTERS.join(', ')}`);
+    return;
+  }
   const shl = (await db.DbLinks.getUserShlInternal(context.params.shlId, userId))!;
   if (!shl) {
     handleError(context, logMessage, 401, "Unauthorized");
     return;
   }
-  const accessLog = db.DbLinks.getAccessLog(shl.id, limit);
+  const accessLog = db.DbLinks.getAccessLog(shl.id, limit, viewer as types.AccessLogViewerFilter);
   log(context, { ...logMessage, outcome: "200 OK" });
   context.response.headers.set('content-type', 'application/json');
   context.response.body = accessLog;

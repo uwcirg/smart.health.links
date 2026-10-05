@@ -33,6 +33,10 @@ export interface FileSummary {
   contentHash: string;
 }
 
+// Which access log entries to return: owner's own views, everyone else's, or both
+export const ACCESS_LOG_VIEWER_FILTERS = ['self', 'other', 'all'] as const;
+export type AccessLogViewerFilter = typeof ACCESS_LOG_VIEWER_FILTERS[number];
+
 // Entry in an SHL's access history
 export interface AccessLogEntry {
   recipient: string;

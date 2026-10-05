@@ -698,9 +698,10 @@ export const DbLinks = {
       recipient,
     });
   },
-  getAccessLog(shlId: string, limit: number): types.AccessLogEntry[] {
+  getAccessLog(shlId: string, limit: number, viewer: types.AccessLogViewerFilter = 'all'): types.AccessLogEntry[] {
+    const ownerClause = viewer === 'self' ? 'and is_owner=1' : viewer === 'other' ? 'and is_owner=0' : '';
     const entries = db.queryEntries<types.shlink_access_log>(
-      `select recipient, access_time, ip_address, is_owner from shlink_access_log where shlink=? order by rowid desc limit ?`,
+      `select recipient, access_time, ip_address, is_owner from shlink_access_log where shlink=? ${ownerClause} order by rowid desc limit ?`,
       [shlId, limit],
     );
     return entries.map((e: types.shlink_access_log) => ({
