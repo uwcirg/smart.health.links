@@ -685,10 +685,10 @@ export const DbLinks = {
       contentHash: f.content_hash,
     } as types.FileSummary));
   },
-  recordAccess(shlId: string, recipient: string, ipAddress: string) {
-    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient, ip_address) values (?, ?, ?)`);
+  recordAccess(shlId: string, recipient: string, ipAddress: string, isOwner: boolean = false) {
+    const q = db.prepareQuery(`insert into  shlink_access_log(shlink, recipient, ip_address, is_owner) values (?, ?, ?, ?)`);
     try {
-      q.execute([shlId, recipient, ipAddress]);
+      q.execute([shlId, recipient, ipAddress, isOwner ? 1 : 0]);
     } finally {
       q.finalize();
     }
@@ -700,13 +700,14 @@ export const DbLinks = {
   },
   getAccessLog(shlId: string, limit: number): types.AccessLogEntry[] {
     const entries = db.queryEntries<types.shlink_access_log>(
-      `select recipient, access_time, ip_address from shlink_access_log where shlink=? order by rowid desc limit ?`,
+      `select recipient, access_time, ip_address, is_owner from shlink_access_log where shlink=? order by rowid desc limit ?`,
       [shlId, limit],
     );
     return entries.map((e: types.shlink_access_log) => ({
       recipient: e.recipient,
       accessTime: toIsoUtc(e.access_time),
       ipAddress: e.ip_address,
+      isOwner: !!e.is_owner,
     } as types.AccessLogEntry));
   },
   /** Most recent lifecycle events for an SHL (newest first), for clients to display as history. */

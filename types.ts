@@ -38,6 +38,7 @@ export interface AccessLogEntry {
   recipient: string;
   accessTime: string;
   ipAddress?: string;
+  isOwner: boolean;
 }
 
 export interface EventLogEntry {
@@ -164,6 +165,7 @@ export interface shlink_access_log {
   recipient?: string;
   access_time?: string;
   ip_address?: string;
+  is_owner?: number;
 }
 
 export type ShlinkEventType =

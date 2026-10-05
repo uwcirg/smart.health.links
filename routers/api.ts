@@ -301,7 +301,11 @@ router.post('/shl/:shlId', async (context) => {
   setTimeout(() => {
     manifestAccessTickets.delete(ticket);
   }, 60000);
-  db.DbLinks.recordAccess(shl.id, config.recipient, context.request.ip);
+  const viewerSub = await getOptionalAuthSub(context);
+  const ownerSub = viewerSub ? db.DbLinks.getShlOwner(shl.id) : undefined;
+  const isOwner = viewerSub !== undefined && viewerSub === ownerSub;
+  logMessage.entity!.detail!.isOwner = String(isOwner);
+  db.DbLinks.recordAccess(shl.id, config.recipient, context.request.ip, isOwner);
 
   context.response.headers.set('expires', new Date().toUTCString());
   context.response.headers.set('content-type', 'application/json');
@@ -916,6 +920,45 @@ router.post('/register', (context) => {
 
 */
 
+/** Verify a bearer JWT against the configured JWKS; throws if invalid or if no JWKS is configured */
+async function verifyJwt(tokenValue: string): Promise<jose.JWTPayload> {
+  if (!jwks) {
+    throw new Error("No JWKS configured");
+  }
+  const { payload } = await jose.jwtVerify(tokenValue, jwks, {
+    algorithms: ['RS256'],
+    audience: ['account'],
+    ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
+  });
+  return payload;
+}
+
+/**
+ * Best-effort authentication for open endpoints: returns the token's sub claim if the
+ * request carries a valid Authorization header, otherwise undefined. Never throws or
+ * rejects the request.
+ */
+async function getOptionalAuthSub(context: oak.Context): Promise<string | undefined> {
+  try {
+    const tokenValue = context.request.headers.get('Authorization')?.split(' ')[1];
+    if (!tokenValue) {
+      return undefined;
+    }
+    // Same test/development management token adapter as authMiddleware
+    if (isEnvFlagEnabled(Deno.env.get('TEST')) || isEnvFlagEnabled(Deno.env.get('DEV'))) {
+      if (db.DbLinks.managementTokenExists(tokenValue)) {
+        const mtUser = db.DbLinks.getManagementTokenUserInternal(tokenValue);
+        if (mtUser) {
+          return mtUser;
+        }
+      }
+    }
+    return (await verifyJwt(tokenValue)).sub;
+  } catch (_e) {
+    return undefined;
+  }
+}
+
 /** JWT validation middleware */
 async function authMiddleware(context: oak.Context, next: () => Promise<unknown>) {
   const logMessage: types.LogMessageSimple = {
@@ -969,20 +1012,11 @@ async function authMiddleware(context: oak.Context, next: () => Promise<unknown>
     } 
   }
   
-  if (!jwks) {
-    handleError(context, logMessage, 401, "Invalid token");
-    return;
-  }
-
   try {
-    const verifiedDecodedToken = await jose.jwtVerify(tokenValue, jwks, {
-      algorithms: ['RS256'],
-      audience: ['account'],
-      ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
-    });
-    context.state.auth = verifiedDecodedToken.payload;
-    
-    const subject = verifiedDecodedToken.payload.sub;
+    const payload = await verifyJwt(tokenValue);
+    context.state.auth = payload;
+
+    const subject = payload.sub;
     log(context, {
       ...logMessage,
       subject,

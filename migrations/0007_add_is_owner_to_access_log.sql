@@ -1,0 +1,1 @@
+ALTER TABLE shlink_access_log ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0;
