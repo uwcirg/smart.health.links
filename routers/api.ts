@@ -784,7 +784,7 @@ router.get('/shl/:shlId/access-log', async (context) => {
   const userId = getAuthenticatedUserId(context);
   const limitParam = Number(context.request.url.searchParams.get('limit'));
   const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 10;
-  const viewer = context.request.url.searchParams.get('viewer') ?? 'other';
+  const viewer = context.request.url.searchParams.get('viewer') ?? 'all';
   const logMessage: types.LogMessageSimple = {
     action: "read",
     subject: db.DbLinks.getShlOwner(context.params.shlId),
